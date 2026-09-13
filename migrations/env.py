@@ -4,6 +4,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from tennis_predictor.config import get_settings
+from tennis_predictor.storage.models import Base
 
 config = context.config
 if config.config_file_name is not None:
@@ -12,8 +13,7 @@ if config.config_file_name is not None:
 settings = get_settings()
 config.set_main_option("sqlalchemy.url", settings.postgres_dsn)
 
-# TODO: заменить на Base.metadata, когда появятся ORM-модели в storage/
-target_metadata = None
+target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
