@@ -45,5 +45,5 @@ jobs:
           script: |
             cd /root/Tennis_pelmen_model
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-            docker compose -f infra/docker/docker-compose.yml pull
-            docker compose -f infra/docker/docker-compose.yml up -d postgres
+            docker compose --env-file /root/Tennis_pelmen_model/.env -f infra/docker/docker-compose.yml pull
+            docker compose --env-file /root/Tennis_pelmen_model/.env -f infra/docker/docker-compose.yml up -d postgres
