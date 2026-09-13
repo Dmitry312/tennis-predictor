@@ -1,11 +1,9 @@
 services:
   app:
-    # Замени OWNER/REPO на реальные владельца и имя репозитория (в нижнем регистре — так требует GHCR)
-    image: ghcr.io/OWNER/REPO:latest
+    image: ghcr.io/dmitry312/tennis-predictor:latest
     env_file: ../../.env
     depends_on:
       - postgres
-    restart: unless-stopped
 
   postgres:
     image: postgres:16-alpine
@@ -16,7 +14,6 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     restart: unless-stopped
-    # Порт 5432 наружу не пробрасываем: доступ локально только через SSH-туннель.
 
 volumes:
   pgdata:
