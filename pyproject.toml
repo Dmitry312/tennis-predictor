@@ -1,0 +1,35 @@
+[project]
+name = "tennis-predictor"
+version = "0.1.0"
+description = "Value-bet detection engine for ATP/WTA singles pre-match markets"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic-settings>=2.5",
+    "sqlalchemy>=2.0",
+    "psycopg2-binary>=2.9",
+    "alembic>=1.13",
+    "boto3>=1.35",
+    "pandas>=2.2",
+    # Библиотека бустинга (LightGBM / CatBoost / XGBoost) сознательно не зафиксирована —
+    # добавим, когда дойдём до этапа обучения модели.
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tennis_predictor"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
