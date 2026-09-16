@@ -1,7 +1,7 @@
-from datetime import datetime
 import uuid
+from datetime import datetime
 
-from sqlalchemy import Boolean, Column, Date, DateTime, Integer, String
+from sqlalchemy import Boolean, Column, Date, DateTime, Float, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import declarative_base
 
@@ -23,4 +23,5 @@ class Match(Base):
     championat_match_id = Column(Integer, nullable=True)
     has_pbp = Column(Boolean, default=False)
     pbp_s3_path = Column(String, nullable=True)
+    pbp_completeness = Column(Float, nullable=True)  # NULL = pbp нет вовсе (has_pbp=False); 0.0 = pbp есть, но ни один гейм не завершён; иначе доля complete-геймов
     created_at = Column(DateTime, default=datetime.utcnow)

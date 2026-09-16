@@ -90,9 +90,21 @@ PARQUET_COLUMNS = [
     "is_match_point",
     "is_tiebreak",
     "point_type",
+    "game_complete",
 ]
 
 SQL_CHUNK_SIZE = 500  # лимит sqlite на количество '?' в одном запросе — 999
+
+# Шкала обычного гейма: 0 < 15 < 30 < 40 < AD/A. Для тай-брейка ранг —
+# просто сырое целое число (см. _score_rank). winner/server_team1 в
+# points_stats биты (пустая строка / всегда 0 на 100% строк источника),
+# поэтому и победитель очка, и подающий гейма восстанавливаются из
+# другого, надёжного материала: прогрессии счёта (score_team1/score_team2)
+# и games_stats.server_team1 соответственно. Логика ниже перенесена без
+# изменений из диагностического скрипта, которым она была провалидирована
+# на случайной выборке матчей (99.5% согласия с games_stats на обычных
+# геймах при сверке "кто выиграл гейм" по независимому источнику).
+SCORE_RANK = {"0": 0, "15": 1, "30": 2, "40": 3, "AD": 4, "A": 4}
 
 # Фиксированное пространство имён для детерминированных UUID: один и тот
 # же nbbet_match_id всегда даёт один и тот же canonical_match_id, даже
@@ -118,6 +130,76 @@ def _is_doubles(player_name: str | None) -> bool:
 def _chunked(items: list, size: int) -> Iterable[list]:
     for i in range(0, len(items), size):
         yield items[i : i + size]
+
+
+def _score_rank(value: str | None, tiebreak: bool) -> int | None:
+    """Ранг значения счёта. Тай-брейк — сырое целое; обычный гейм — SCORE_RANK."""
+    if tiebreak:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+    return SCORE_RANK.get(value)
+
+
+def _reconstruct_point_winner(
+    prev: tuple[str, str], cur: tuple[str, str], tiebreak: bool
+) -> int | None:
+    """Победитель очка (1/2) по переходу prev -> cur. None, если переход не
+    распознан (счёт не изменился, скачок больше чем на шаг, и т.п.) —
+    признак ещё одной формы битой строки, отличной от пустых winner/server."""
+    p1, p2 = prev
+    c1, c2 = cur
+    rp1, rp2 = _score_rank(p1, tiebreak), _score_rank(p2, tiebreak)
+    rc1, rc2 = _score_rank(c1, tiebreak), _score_rank(c2, tiebreak)
+    if None in (rp1, rp2, rc1, rc2):
+        return None
+
+    if tiebreak:
+        if rc1 > rp1 and rc2 == rp2:
+            return 1
+        if rc2 > rp2 and rc1 == rp1:
+            return 2
+        return None
+
+    # Возврат с AD на 40-40 ("deuce"): выиграл тот, у кого НЕ было AD.
+    if rp1 == 4 and rc1 == 3 and rc2 == 3 and rp2 == 3:
+        return 2
+    if rp2 == 4 and rc2 == 3 and rc1 == 3 and rp1 == 3:
+        return 1
+    # С 40-40 на AD: выиграл тот, у кого появилось AD.
+    if rp1 == 3 and rp2 == 3 and rc1 == 4 and rc2 == 3:
+        return 1
+    if rp1 == 3 and rp2 == 3 and rc2 == 4 and rc1 == 3:
+        return 2
+    # Обычный шаг по шкале 0-15-30-40.
+    if rc1 > rp1 and c2 == p2:
+        return 1
+    if rc2 > rp2 and c1 == p1:
+        return 2
+    return None
+
+
+def _is_game_complete(last1: str, last2: str, tiebreak: bool, is_supertiebreak: bool) -> bool:
+    """Терминально ли последнее записанное состояние гейма.
+
+    Тай-брейк — лидер набрал ≥7 (или ≥10 для supertiebreak) очков с
+    отрывом ≥2. Обычный гейм — строго: лидер на 40 (ранг 3) при сопернике
+    ниже 40, либо лидер на AD (ранг 4) при сопернике на 40 (ранг 3). Просто
+    "ранги различаются" недостаточно — например 30-15 тоже различаются,
+    но это точно не конец гейма.
+    """
+    if tiebreak:
+        try:
+            v1, v2 = int(last1), int(last2)
+        except (TypeError, ValueError):
+            return False
+        threshold = 10 if is_supertiebreak else 7
+        return abs(v1 - v2) >= 2 and (v1 >= threshold or v2 >= threshold)
+    r1, r2 = SCORE_RANK.get(last1), SCORE_RANK.get(last2)
+    if r1 is None or r2 is None:
+        return False
+    return (r1 == 3 and r2 < 3) or (r2 == 3 and r1 < 3) or (r1 == 4 and r2 == 3) or (r2 == 4 and r1 == 3)
 
 
 @dataclass
@@ -228,6 +310,10 @@ def fetch_pbp(sqlite_conn: sqlite3.Connection, nbbet_ids: list[int]) -> pd.DataF
     Матчи, у которых есть games_stats, но нет ни одной строки в
     points_stats (неполный исторический сбор), просто не дадут строк —
     это ожидаемо для небольшой доли матчей.
+
+    server_team1 берём из games_stats (реальные значения), а не из
+    points_stats — там оно всегда 0, см. SCORE_RANK выше. winner из
+    points_stats не тянем вовсе — тоже всегда пустое, бесполезно.
     """
     frames = []
     for chunk in _chunked(nbbet_ids, SQL_CHUNK_SIZE):
@@ -236,9 +322,10 @@ def fetch_pbp(sqlite_conn: sqlite3.Connection, nbbet_ids: list[int]) -> pd.DataF
             f"""
             SELECT
                 p.match_id, p.set_num, p.game_num, p.point_num,
-                p.score_team1, p.score_team2, p.server_team1,
-                p.winner, p.is_break_point, p.is_match_point, p.point_type,
-                g.is_tiebreak AS game_is_tiebreak
+                p.score_team1, p.score_team2,
+                p.is_break_point, p.is_match_point, p.point_type,
+                g.is_tiebreak AS game_is_tiebreak,
+                g.server_team1 AS game_server_team1
             FROM points_stats p
             LEFT JOIN games_stats g
                 ON g.match_id = p.match_id
@@ -255,50 +342,175 @@ def fetch_pbp(sqlite_conn: sqlite3.Connection, nbbet_ids: list[int]) -> pd.DataF
     return pd.concat(frames, ignore_index=True)
 
 
+def fetch_games_per_set(sqlite_conn: sqlite3.Connection, nbbet_ids: list[int]) -> dict[tuple[int, int], int]:
+    """Количество геймов в каждом (match_id, set_num) — нужно, чтобы отличить
+    supertiebreak (тай-брейк — единственный "гейм" сета, играется вместо
+    полного решающего сета) от обычного тай-брейка (13-й гейм сета после
+    12 обычных). Считаем по games_stats напрямую, а не по points_stats —
+    полностью пустые геймы (points_count=0) тоже должны попасть в счёт.
+    """
+    counts: dict[tuple[int, int], int] = {}
+    for chunk in _chunked(nbbet_ids, SQL_CHUNK_SIZE):
+        placeholders = ",".join("?" * len(chunk))
+        cur = sqlite_conn.execute(
+            f"""
+            SELECT match_id, set_num, COUNT(*)
+            FROM games_stats
+            WHERE match_id IN ({placeholders})
+            GROUP BY match_id, set_num
+            """,
+            chunk,
+        )
+        for match_id, set_num, cnt in cur.fetchall():
+            counts[(match_id, set_num)] = cnt
+    return counts
+
+
 def build_parquet_frame(
     raw_pbp: pd.DataFrame,
     uuid_by_nbbet_id: dict[int, uuid.UUID],
     gender: str,
     level: str,
+    games_per_set: dict[tuple[int, int], int],
 ) -> pd.DataFrame:
-    """Плоская таблица очков в формате, который уходит в Parquet."""
+    """Плоская таблица очков в формате, который уходит в Parquet.
+
+    winner/server_team1 в points_stats биты (см. SCORE_RANK), поэтому:
+      - point_winner реконструируется по прогрессии score_team1/score_team2
+        между соседними очками гейма (_reconstruct_point_winner) — та же
+        логика, что провалидирована в диагностике, перенесена как есть;
+      - server гейма берём из games_stats.server_team1 (games_per_set/
+        raw_pbp содержат game_server_team1) — одно значение на весь
+        обычный гейм; для тай-брейка server=None (подача чередуется,
+        точную формулу пока не считаем);
+      - game_complete — терминально ли последнее очко гейма (win-threshold
+        + отрыв ≥2 для тай-брейка, различающиеся ранги для обычного).
+
+    Накопление колоночное (список примитивов на колонку), а не список
+    словарей на строку: на боевых объёмах (500К+ очков в одной группе)
+    список словарей — это сотни лишних МБ (у каждого dict своя хэш-таблица
+    на 17 ключей) и стало причиной OOM на 4-ГБ машине при полном бэкфилле.
+    """
     if raw_pbp.empty:
         return pd.DataFrame(columns=PARQUET_COLUMNS)
 
-    df = raw_pbp.copy()
+    unresolved = 0
 
-    # В источнике winner/server_team1 иногда приходили пустой строкой
-    # вместо числа (pbp_collector.py: point.get('winner', '')). Такие
-    # очки дальше не несём, но считаем, сколько отбросили.
-    df["winner"] = pd.to_numeric(df["winner"], errors="coerce")
-    df["server_team1"] = pd.to_numeric(df["server_team1"], errors="coerce")
-    bad = df["winner"].isna() | df["server_team1"].isna()
-    if bad.any():
-        logger.warning("build_parquet_frame: отброшено %d очков с некорректным winner/server", int(bad.sum()))
-        df = df[~bad]
+    col_canonical_match_id: list[str] = []
+    col_set_num: list = []
+    col_game_num: list = []
+    col_point_num: list = []
+    col_server: list = []
+    col_point_winner: list = []
+    col_server_won_point: list = []
+    col_score_server: list = []
+    col_score_returner: list = []
+    col_is_break_point: list = []
+    col_is_match_point: list = []
+    col_is_tiebreak: list = []
+    col_point_type: list = []
+    col_game_complete: list = []
 
-    is_team1_server = df["server_team1"] == 1
+    # sort_values(inplace=True) вместо sorted_pbp = raw_pbp.sort_values(...):
+    # raw_pbp больше нигде не используется в вызывающем коде, повторная
+    # копия всего фрейма ни к чему.
+    raw_pbp.sort_values(["match_id", "set_num", "game_num", "point_num"], inplace=True)
+
+    for (match_id, set_num, game_num), game_points in raw_pbp.groupby(
+        ["match_id", "set_num", "game_num"], sort=False
+    ):
+        first = game_points.iloc[0]
+        is_tiebreak = bool(first["game_is_tiebreak"]) if pd.notna(first["game_is_tiebreak"]) else False
+        game_server_team1 = first["game_server_team1"]
+
+        if is_tiebreak:
+            server = None
+        elif game_server_team1 == 1:
+            server = 1
+        elif game_server_team1 == 0:
+            server = 2
+        else:
+            server = None  # games_stats.server_team1 сам не распознан (NaN и т.п.)
+
+        is_supertiebreak = is_tiebreak and games_per_set.get((match_id, set_num), 0) == 1
+        canonical_str = str(uuid_by_nbbet_id[int(match_id)])
+
+        prev = ("0", "0")
+        last_state = prev
+        game_start = len(col_game_complete)
+        for point in game_points.itertuples(index=False):
+            cur = (point.score_team1, point.score_team2)
+            point_winner = _reconstruct_point_winner(prev, cur, is_tiebreak)
+            if point_winner is None:
+                unresolved += 1
+
+            if server is not None and point_winner is not None:
+                server_won_point = server == point_winner
+            else:
+                server_won_point = None
+
+            if server == 1:
+                score_server, score_returner = cur[0], cur[1]
+            elif server == 2:
+                score_server, score_returner = cur[1], cur[0]
+            else:
+                score_server, score_returner = None, None
+
+            col_canonical_match_id.append(canonical_str)
+            col_set_num.append(set_num)
+            col_game_num.append(game_num)
+            col_point_num.append(point.point_num)
+            col_server.append(server)
+            col_point_winner.append(point_winner)
+            col_server_won_point.append(server_won_point)
+            col_score_server.append(score_server)
+            col_score_returner.append(score_returner)
+            col_is_break_point.append(bool(point.is_break_point) if pd.notna(point.is_break_point) else False)
+            col_is_match_point.append(bool(point.is_match_point) if pd.notna(point.is_match_point) else False)
+            col_is_tiebreak.append(is_tiebreak)
+            col_point_type.append(point.point_type)
+            col_game_complete.append(False)  # проставляется ниже по последнему очку гейма
+
+            prev = cur
+            last_state = cur
+
+        game_complete = _is_game_complete(last_state[0], last_state[1], is_tiebreak, is_supertiebreak)
+        for i in range(game_start, len(col_game_complete)):
+            col_game_complete[i] = game_complete
+
+    if unresolved:
+        logger.warning(
+            "build_parquet_frame: не удалось реконструировать победителя %d очков "
+            "(счёт не изменился между соседними строками, либо скачок вне правил "
+            "0-15-30-40-AD/тай-брейка) — это отдельная форма брака, не связанная "
+            "с пустыми winner/server_team1",
+            unresolved,
+        )
 
     out = pd.DataFrame(
         {
-            "canonical_match_id": df["match_id"].astype(int).map(uuid_by_nbbet_id).astype(str),
+            "canonical_match_id": col_canonical_match_id,
             "gender": gender,
             "level": level,
             "surface": None,
-            "set_num": df["set_num"],
-            "game_num": df["game_num"],
-            "point_num": df["point_num"],
-            "server": is_team1_server.map({True: 1, False: 2}),
-            "point_winner": df["winner"].astype(int),
-            "score_server": df["score_team1"].where(is_team1_server, df["score_team2"]),
-            "score_returner": df["score_team2"].where(is_team1_server, df["score_team1"]),
-            "is_break_point": df["is_break_point"].fillna(0).astype(bool),
-            "is_match_point": df["is_match_point"].fillna(0).astype(bool),
-            "is_tiebreak": df["game_is_tiebreak"].fillna(0).astype(bool),
-            "point_type": df["point_type"],
+            "set_num": col_set_num,
+            "game_num": col_game_num,
+            "point_num": col_point_num,
+            # Явный nullable-тип сразу при конструировании — без него pandas
+            # апкастит колонку с int+None в float64 (None -> NaN), стирая
+            # разницу между "0/1/2" и "не определилось".
+            "server": pd.array(col_server, dtype="Int64"),
+            "point_winner": pd.array(col_point_winner, dtype="Int64"),
+            "server_won_point": pd.array(col_server_won_point, dtype="boolean"),
+            "score_server": col_score_server,
+            "score_returner": col_score_returner,
+            "is_break_point": col_is_break_point,
+            "is_match_point": col_is_match_point,
+            "is_tiebreak": col_is_tiebreak,
+            "point_type": col_point_type,
+            "game_complete": col_game_complete,
         }
     )
-    out["server_won_point"] = out["server"] == out["point_winner"]
     return out[PARQUET_COLUMNS]
 
 
@@ -309,7 +521,10 @@ def write_parquet_to_s3(df: pd.DataFrame, s3_client, bucket: str, key: str, dry_
     table = pa.Table.from_pandas(df, preserve_index=False)
     buf = io.BytesIO()
     pq.write_table(table, buf, compression="zstd")
-    s3_client.put_object(Bucket=bucket, Key=key, Body=buf.getvalue())
+    buf.seek(0)
+    # Body=buf (файлоподобный объект), а не buf.getvalue() — второе делает
+    # ещё одну полную копию байт перед отправкой, лишнее на больших группах.
+    s3_client.put_object(Bucket=bucket, Key=key, Body=buf)
 
 
 def insert_matches(conn, rows: list[dict], dry_run: bool) -> None:
@@ -354,7 +569,8 @@ def process_group(
     # поэтому результат идентичен для уже перенесённых матчей.
     uuid_by_nbbet_id = {int(r.nbbet_match_id): r.canonical_match_id for r in group.itertuples(index=False)}
     raw_pbp = fetch_pbp(sqlite_conn, nbbet_ids)
-    parquet_df = build_parquet_frame(raw_pbp, uuid_by_nbbet_id, gender, level)
+    games_per_set = fetch_games_per_set(sqlite_conn, nbbet_ids)
+    parquet_df = build_parquet_frame(raw_pbp, uuid_by_nbbet_id, gender, level, games_per_set)
     stats.points_written = len(parquet_df)
 
     write_parquet_to_s3(parquet_df, s3_client, bucket, key, dry_run)
@@ -365,23 +581,50 @@ def process_group(
     # (неполный исторический сбор, см. расхождение games_stats/points_stats).
     matched_ids = set(parquet_df["canonical_match_id"].astype(str)) if not parquet_df.empty else set()
 
-    rows = [
-        {
-            "match_id": r.canonical_match_id,
-            "gender": gender,
-            "level": level,
-            "tournament_name": r.tournament_name,
-            "match_date": r.match_date,
-            "player1": r.player1,
-            "player2": r.player2,
-            "surface": None,
-            "nbbet_match_id": int(r.nbbet_match_id),
-            "championat_match_id": None,
-            "has_pbp": str(r.canonical_match_id) in matched_ids,
-            "pbp_s3_path": key,
-        }
-        for r in to_insert.itertuples(index=False)
-    ]
+    # pbp_completeness = доля геймов матча, дошедших до терминального
+    # состояния (game_complete=True в Parquet), от общего числа геймов
+    # матча по games_stats (не только тех, что попали в Parquet — пустые
+    # геймы, points_count=0, тоже считаются в знаменателе как незавершённые).
+    total_games_by_match: dict[int, int] = {}
+    for (nbbet_id, _set_num), count in games_per_set.items():
+        total_games_by_match[nbbet_id] = total_games_by_match.get(nbbet_id, 0) + count
+
+    if not parquet_df.empty:
+        complete_games_by_uuid = (
+            parquet_df[parquet_df["game_complete"]]
+            .drop_duplicates(["canonical_match_id", "set_num", "game_num"])
+            .groupby("canonical_match_id")
+            .size()
+            .to_dict()
+        )
+    else:
+        complete_games_by_uuid = {}
+
+    rows = []
+    for r in to_insert.itertuples(index=False):
+        nbbet_id = int(r.nbbet_match_id)
+        canonical_str = str(r.canonical_match_id)
+        total_games = total_games_by_match.get(nbbet_id, 0)
+        complete_games = complete_games_by_uuid.get(canonical_str, 0)
+        canonical_str_check = canonical_str in matched_ids
+        pbp_completeness = (complete_games / total_games) if (canonical_str_check and total_games) else None
+        rows.append(
+            {
+                "match_id": r.canonical_match_id,
+                "gender": gender,
+                "level": level,
+                "tournament_name": r.tournament_name,
+                "match_date": r.match_date,
+                "player1": r.player1,
+                "player2": r.player2,
+                "surface": None,
+                "nbbet_match_id": nbbet_id,
+                "championat_match_id": None,
+                "has_pbp": canonical_str_check,
+                "pbp_s3_path": key,
+                "pbp_completeness": pbp_completeness,
+            }
+        )
     stats.matches_without_points = sum(1 for r in rows if not r["has_pbp"])
 
     with engine.begin() as conn:
