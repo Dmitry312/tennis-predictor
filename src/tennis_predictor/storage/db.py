@@ -1,7 +1,7 @@
 """SQLAlchemy engine и фабрика сессий.
 
-Модели (ORM-классы) появятся здесь же, когда дойдём до схемы БД —
-тогда target_metadata в migrations/env.py перестанет быть None.
+ORM-модели живут в models.py (Base, Match); target_metadata в
+migrations/env.py указывает на Base.metadata.
 """
 
 from sqlalchemy import create_engine
