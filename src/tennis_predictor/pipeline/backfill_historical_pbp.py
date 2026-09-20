@@ -50,6 +50,13 @@ import pyarrow.parquet as pq
 from sqlalchemy import insert, select
 
 from tennis_predictor.config import get_settings
+from tennis_predictor.ingestion.nbbet.pbp_parsing import canonical_match_id as _canonical_match_id
+from tennis_predictor.ingestion.nbbet.pbp_parsing import classify_tournament
+from tennis_predictor.ingestion.nbbet.pbp_parsing import is_doubles as _is_doubles
+from tennis_predictor.ingestion.nbbet.pbp_parsing import is_game_complete as _is_game_complete
+from tennis_predictor.ingestion.nbbet.pbp_parsing import (
+    reconstruct_point_winner as _reconstruct_point_winner,
+)
 from tennis_predictor.storage.db import engine
 from tennis_predictor.storage.models import Match
 from tennis_predictor.storage.s3_client import get_s3_client
@@ -58,19 +65,6 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger(__name__)
 
 DEFAULT_SOURCE_DB = Path.home() / "tennis_prediction_model_old" / "tennis_matches.db"
-
-# Префикс tournament_name (часть до первой точки) -> (gender, level).
-# Всё остальное (Юноши, Девушки, Команды -*, Смешанные пары,
-# EXHIBITION Микст/Мужчины/Женщины) — пропускаем целиком: exhibition
-# исключён отдельно как систематически неполный источник (см. docstring).
-LEVEL_MAP: dict[str, tuple[str, str]] = {
-    "ATP": ("M", "tour"),
-    "WTA": ("F", "tour"),
-    "ATP Челленджер": ("M", "challenger"),
-    "WTA Челленджер": ("F", "challenger"),
-    "ITF Мужчины": ("M", "itf"),
-    "ITF Женщины": ("F", "itf"),
-}
 
 # Колонки итогового Parquet-файла (один файл на связку gender/level/year).
 PARQUET_COLUMNS = [
@@ -95,111 +89,10 @@ PARQUET_COLUMNS = [
 
 SQL_CHUNK_SIZE = 500  # лимит sqlite на количество '?' в одном запросе — 999
 
-# Шкала обычного гейма: 0 < 15 < 30 < 40 < AD/A. Для тай-брейка ранг —
-# просто сырое целое число (см. _score_rank). winner/server_team1 в
-# points_stats биты (пустая строка / всегда 0 на 100% строк источника),
-# поэтому и победитель очка, и подающий гейма восстанавливаются из
-# другого, надёжного материала: прогрессии счёта (score_team1/score_team2)
-# и games_stats.server_team1 соответственно. Логика ниже перенесена без
-# изменений из диагностического скрипта, которым она была провалидирована
-# на случайной выборке матчей (99.5% согласия с games_stats на обычных
-# геймах при сверке "кто выиграл гейм" по независимому источнику).
-SCORE_RANK = {"0": 0, "15": 1, "30": 2, "40": 3, "AD": 4, "A": 4}
-
-# Фиксированное пространство имён для детерминированных UUID: один и тот
-# же nbbet_match_id всегда даёт один и тот же canonical_match_id, даже
-# при повторном запуске скрипта в другой день.
-_UUID_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "tennis-predictor/nbbet-match-id")
-
-
-def _canonical_match_id(nbbet_match_id: int) -> uuid.UUID:
-    return uuid.uuid5(_UUID_NAMESPACE, str(nbbet_match_id))
-
-
-def _tournament_prefix(tournament_name: str | None) -> str | None:
-    """То же самое, что SUBSTR(tournament_name, 1, INSTR(tournament_name, '.') - 1)."""
-    if not tournament_name or "." not in tournament_name:
-        return None
-    return tournament_name.split(".", 1)[0].strip()
-
-
-def _is_doubles(player_name: str | None) -> bool:
-    return bool(player_name) and "/" in player_name
-
 
 def _chunked(items: list, size: int) -> Iterable[list]:
     for i in range(0, len(items), size):
         yield items[i : i + size]
-
-
-def _score_rank(value: str | None, tiebreak: bool) -> int | None:
-    """Ранг значения счёта. Тай-брейк — сырое целое; обычный гейм — SCORE_RANK."""
-    if tiebreak:
-        try:
-            return int(value)
-        except (TypeError, ValueError):
-            return None
-    return SCORE_RANK.get(value)
-
-
-def _reconstruct_point_winner(
-    prev: tuple[str, str], cur: tuple[str, str], tiebreak: bool
-) -> int | None:
-    """Победитель очка (1/2) по переходу prev -> cur. None, если переход не
-    распознан (счёт не изменился, скачок больше чем на шаг, и т.п.) —
-    признак ещё одной формы битой строки, отличной от пустых winner/server."""
-    p1, p2 = prev
-    c1, c2 = cur
-    rp1, rp2 = _score_rank(p1, tiebreak), _score_rank(p2, tiebreak)
-    rc1, rc2 = _score_rank(c1, tiebreak), _score_rank(c2, tiebreak)
-    if None in (rp1, rp2, rc1, rc2):
-        return None
-
-    if tiebreak:
-        if rc1 > rp1 and rc2 == rp2:
-            return 1
-        if rc2 > rp2 and rc1 == rp1:
-            return 2
-        return None
-
-    # Возврат с AD на 40-40 ("deuce"): выиграл тот, у кого НЕ было AD.
-    if rp1 == 4 and rc1 == 3 and rc2 == 3 and rp2 == 3:
-        return 2
-    if rp2 == 4 and rc2 == 3 and rc1 == 3 and rp1 == 3:
-        return 1
-    # С 40-40 на AD: выиграл тот, у кого появилось AD.
-    if rp1 == 3 and rp2 == 3 and rc1 == 4 and rc2 == 3:
-        return 1
-    if rp1 == 3 and rp2 == 3 and rc2 == 4 and rc1 == 3:
-        return 2
-    # Обычный шаг по шкале 0-15-30-40.
-    if rc1 > rp1 and c2 == p2:
-        return 1
-    if rc2 > rp2 and c1 == p1:
-        return 2
-    return None
-
-
-def _is_game_complete(last1: str, last2: str, tiebreak: bool, is_supertiebreak: bool) -> bool:
-    """Терминально ли последнее записанное состояние гейма.
-
-    Тай-брейк — лидер набрал ≥7 (или ≥10 для supertiebreak) очков с
-    отрывом ≥2. Обычный гейм — строго: лидер на 40 (ранг 3) при сопернике
-    ниже 40, либо лидер на AD (ранг 4) при сопернике на 40 (ранг 3). Просто
-    "ранги различаются" недостаточно — например 30-15 тоже различаются,
-    но это точно не конец гейма.
-    """
-    if tiebreak:
-        try:
-            v1, v2 = int(last1), int(last2)
-        except (TypeError, ValueError):
-            return False
-        threshold = 10 if is_supertiebreak else 7
-        return abs(v1 - v2) >= 2 and (v1 >= threshold or v2 >= threshold)
-    r1, r2 = SCORE_RANK.get(last1), SCORE_RANK.get(last2)
-    if r1 is None or r2 is None:
-        return False
-    return (r1 == 3 and r2 < 3) or (r2 == 3 and r1 < 3) or (r1 == 4 and r2 == 3) or (r2 == 4 and r1 == 3)
 
 
 @dataclass
@@ -259,7 +152,7 @@ def load_manifest(sqlite_conn: sqlite3.Connection) -> tuple[pd.DataFrame, dict[s
             years.append(None)
             continue
 
-        level_info = LEVEL_MAP.get(_tournament_prefix(row.tournament_name))
+        level_info = classify_tournament(row.tournament_name)
         if level_info is None:
             skip_counts["unmapped_level"] += 1
             keep_mask.append(False)
@@ -312,7 +205,7 @@ def fetch_pbp(sqlite_conn: sqlite3.Connection, nbbet_ids: list[int]) -> pd.DataF
     это ожидаемо для небольшой доли матчей.
 
     server_team1 берём из games_stats (реальные значения), а не из
-    points_stats — там оно всегда 0, см. SCORE_RANK выше. winner из
+    points_stats — там оно всегда 0, см. SCORE_RANK в ingestion/nbbet/pbp_parsing.py. winner из
     points_stats не тянем вовсе — тоже всегда пустое, бесполезно.
     """
     frames = []
@@ -375,7 +268,7 @@ def build_parquet_frame(
 ) -> pd.DataFrame:
     """Плоская таблица очков в формате, который уходит в Parquet.
 
-    winner/server_team1 в points_stats биты (см. SCORE_RANK), поэтому:
+    winner/server_team1 в points_stats биты (см. SCORE_RANK в pbp_parsing.py), поэтому:
       - point_winner реконструируется по прогрессии score_team1/score_team2
         между соседними очками гейма (_reconstruct_point_winner) — та же
         логика, что провалидирована в диагностике, перенесена как есть;

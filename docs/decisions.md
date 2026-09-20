@@ -11,3 +11,7 @@ Exhibition-матчи (EXHIBITION Мужчины/Женщины) исключе�
 В `s3://pelmen-data-storage/` обнаружено 13 копий исходных SQLite-баз (`tennis_matches.db`, `tennis_data.db`), раскиданных по `tennis_backups/` и корню бакета двумя волнами (июль и сентябрь 2026) без единой схемы именования. Оставлены только два полных несжатых снапшота, чей размер совпадает с текущими локальными базами (`tennis_backups/tennis_data.db`, `tennis_backups/tennis_matches.db`), остальные 11 удалены.
 
 Схема для будущих raw-бэкапов: `raw_backups/{table}_{YYYYMMDD}.db.gz`, ретеншн на N последних версий — не класть в произвольный префикс.
+
+## championat.com: обход SberID-редиректа через cookie unity_pause_sso
+
+С 2026-09-16 `championat.com` отдаёт HTTP 200 с интерстишл-страницей "Авторизация SberID" на любой URL (проверено на страницах турнира, разделе тенниса, внутреннем API `/stat/data/live/tennis`, доменах `.com` и `.ru`) — сайт полностью закрыт для запросов без валидной сессии. Кука `unity_pause_sso=1` снимает этот редирект: с ней сервер отдаёт реальную страницу (`class="match-center-page tennis atp"` и весь контент) вместо заглушки авторизации. Проверено независимо 2026-09-20 (`curl -b "unity_pause_sso=1"`). Используется в `ingestion/http.py` как `CHAMPIONAT_COOKIES` для будущего championat-коллектора.
