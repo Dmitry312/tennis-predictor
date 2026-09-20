@@ -23,7 +23,7 @@ class Settings(BaseSettings):
 
     # --- Yandex S3 (S3-совместимое хранилище) ---
     s3_endpoint_url: str = "https://storage.yandexcloud.net"
-    s3_bucket: str = "tennis-predictor"
+    s3_bucket: str = "pelmen-data-storage"
     s3_access_key_id: str = ""
     s3_secret_access_key: str = ""
     s3_region: str = "ru-central1"
