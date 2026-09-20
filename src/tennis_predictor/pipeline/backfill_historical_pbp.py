@@ -649,7 +649,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--only-gender", choices=["M", "F"], default=None)
     parser.add_argument(
-        "--only-level", choices=["tour", "challenger", "itf", "exhibition"], default=None
+        "--only-level", choices=["tour", "challenger", "itf"], default=None
     )
     parser.add_argument("--only-year", type=int, default=None)
     return parser.parse_args()
