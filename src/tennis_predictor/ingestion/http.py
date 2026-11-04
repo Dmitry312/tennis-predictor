@@ -16,13 +16,16 @@ CHAMPIONAT_COOKIES = {"unity_pause_sso": "1"}
 
 
 def make_session(
-    *, cookies: dict[str, str] | None = None, headers: dict[str, str] | None = None
+    *,
+    cookies: dict[str, str] | None = None,
+    headers: dict[str, str] | None = None,
+    retry_statuses: tuple[int, ...] = (429, 500, 502, 503, 504),
 ) -> requests.Session:
     session = requests.Session()
     retries = Retry(
         total=3,
         backoff_factor=1.5,
-        status_forcelist=[429, 500, 502, 503, 504],
+        status_forcelist=list(retry_statuses),
         allowed_methods=["GET", "POST"],
     )
     session.mount("https://", HTTPAdapter(max_retries=retries))
