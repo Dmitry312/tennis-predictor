@@ -1,4 +1,5 @@
 name: SSH authentication diagnostic
+# Isolated check: never runs deployment commands.
 
 on:
   push:
