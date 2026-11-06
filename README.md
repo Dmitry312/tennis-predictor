@@ -38,10 +38,14 @@ uv run pytest
 
 ## Деплой
 
-Пуш в `main` триггерит `.github/workflows/deploy.yml`: образ собирается в
-GitHub Actions, пушится в GHCR, затем по SSH на сервере выполняется
-`docker compose pull && docker compose up -d`. Секреты (`SERVER_HOST`,
-`SERVER_USER`, `SERVER_SSH_KEY`) настраиваются в Settings → Secrets репозитория.
+Текущий `.github/workflows/deploy.yml` по push в `main` собирает и публикует
+образ `ghcr.io/dmitry312/tennis-predictor:latest`, затем по SSH выполняет
+`docker compose pull` и **только** `docker compose up -d postgres` в
+`/root/Tennis_pelmen_model`. Host-код, `.venv` и cron этим workflow не обновляются.
+Это описание конфигурации, а не подтверждение состояния сервера.
 
-На сервере ожидается путь `/opt/tennis-predictor` с файлом `.env` и
-`infra/docker/docker-compose.yml` (см. workflow).
+Существование `/opt/tennis-predictor` не подтверждено.
+[Архитектура релизов](docs/production-releases.md) и
+[runbook безопасной инвентаризации](docs/production-inventory.md) описывают
+следующий этап. Эти документы не разрешают подключение или деплой.
+**Merge даже документационного PR в `main` запускает текущий deploy workflow.**
