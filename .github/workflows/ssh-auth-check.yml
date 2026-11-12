@@ -1,0 +1,51 @@
+name: Manual SSH authentication check
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ssh-auth-check
+  cancel-in-progress: false
+
+jobs:
+  ssh-check:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Require SSH settings and trusted fingerprint
+        shell: bash
+        env:
+          SSH_HOST: ${{ secrets.SERVER_HOST }}
+          SSH_USER: ${{ secrets.SERVER_USER }}
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SSH_FINGERPRINT: ${{ secrets.SERVER_HOST_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$SSH_HOST" || -z "$SSH_USER" || -z "$SSH_KEY" ]]; then
+            echo "::error::Required SSH settings are missing"
+            exit 1
+          fi
+          if [[ ! "$SSH_FINGERPRINT" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]]; then
+            echo "::error::A trusted SHA256 host fingerprint is required"
+            exit 1
+          fi
+          if [[ "$SSH_HOST" == *","* || "$SSH_HOST" == *[[:space:]]* ]]; then
+            echo "::error::Exactly one SSH host is required"
+            exit 1
+          fi
+
+      - name: Authenticate and execute true only
+        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          fingerprint: ${{ secrets.SERVER_HOST_FINGERPRINT }}
+          port: 22
+          timeout: 15s
+          command_timeout: 15s
+          debug: false
+          script: "true"
