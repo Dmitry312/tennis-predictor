@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'infra/deploy/**'
+      - 'tests/test_nbbet_cutover_offline.py'
       - '.github/workflows/nbbet-python-*.yml'
       - 'infra/runbooks/nbbet-python-release.md'
   workflow_dispatch:
@@ -21,6 +22,8 @@ jobs:
           persist-credentials: false
       - name: Check shell syntax
         run: bash -n infra/deploy/nbbet_python_cutover.sh
+      - name: Test cutover and rollback in disposable Git repositories
+        run: python -m unittest discover -s tests -p test_nbbet_cutover_offline.py -v
       - name: Check workflow YAML parse
         run: |
           python - <<'PY'
