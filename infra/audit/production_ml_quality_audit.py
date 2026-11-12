@@ -2,6 +2,7 @@
 import datetime as dt
 import json
 import sys
+import importlib.util
 
 # Reuse audited connection parser and session hardening from existing standalone audit.
 # The script is streamed from stdin: importlib is intentionally not used.
@@ -13,15 +14,15 @@ MAX_OUTPUT = 16384
 FIELDS = ('POSTGRES_HOST', 'POSTGRES_PORT', 'POSTGRES_USER', 'POSTGRES_PASSWORD', 'POSTGRES_DB')
 STATUSES = tuple(range(1, 11))
 YEARS_LIMIT = 40
-BUCKET_LIMIT = 32
 
 class AuditFailure(Exception):
     pass
 
 def settings():
     try:
-        raw = Path('/root/Tennis_pelmen_model/.env').read_bytes()
-        if len(raw) > 65536:
+        with Path('/root/Tennis_pelmen_model/.env').open('rb') as stream:
+            raw = stream.read(65537)
+        if len(raw) > 65536 or b'\\x00' in raw:
             raise AuditFailure('connection_config_unavailable')
         text = raw.decode('utf-8')
         found = {}
@@ -35,7 +36,9 @@ def settings():
             if m[1] in found:
                 raise AuditFailure('connection_config_unavailable')
             val = m[2].strip()
-            if val.startswith(('"', "'")) and len(val) >= 2 and val[-1] == val[0]:
+            if val.startswith(('"', "'")):
+                if len(val) < 2 or val[-1] != val[0]:
+                    raise AuditFailure('connection_config_unavailable')
                 val = val[1:-1]
             elif not re.fullmatch(r'[^\s#\x22\x27\\]*', val):
                 raise AuditFailure('connection_config_unavailable')
@@ -45,6 +48,17 @@ def settings():
         vals = {k: os.environ.get(k, found.get(k)) for k in FIELDS}
         if any(type(v) is not str or not v or len(v) > 4096 or
                any(c in v for c in ('\r', '\n', '\x00')) or '${' in v for v in vals.values()):
+            raise AuditFailure('connection_config_unavailable')
+        if not re.fullmatch(r'[0-9]{1,5}', vals['POSTGRES_PORT']):
+            raise AuditFailure('connection_config_unavailable')
+        port = int(vals['POSTGRES_PORT'])
+        if not 1 <= port <= 65535:
+            raise AuditFailure('connection_config_unavailable')
+        return vals, port
+    except FileNotFoundError:
+        vals = {k: os.environ.get(k) for k in FIELDS}
+        if any(type(v) is not str or not v or len(v) > 4096 or
+               any(c in v for c in ('\\r', '\\n', '\\x00')) or '\${' in v for v in vals.values()):
             raise AuditFailure('connection_config_unavailable')
         if not re.fullmatch(r'[0-9]{1,5}', vals['POSTGRES_PORT']):
             raise AuditFailure('connection_config_unavailable')
@@ -76,7 +90,7 @@ QUERIES = {
  COUNT(*) FILTER (WHERE level IS NULL OR level NOT IN ('tour','challenger','itf','exhibition')),
  COUNT(*) FILTER (WHERE status IS NULL OR status <> ALL(%s)),
  COUNT(*) FILTER (WHERE duplicate_of=match_id),
- COUNT(*) FILTER (WHERE duplicate_of IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.matches p WHERE p.match_id=m.duplicate_of)),
+ COUNT(*) FILTER (WHERE duplicate_of IS NOT NULL AND duplicate_of NOT IN (SELECT match_id FROM public.matches)),
  COUNT(*) FILTER (WHERE has_pbp IS TRUE),
  COUNT(*) FILTER (WHERE pbp_s3_path IS NOT NULL),
  COUNT(*) FILTER (WHERE has_pbp IS TRUE AND pbp_s3_path IS NULL),
@@ -97,10 +111,7 @@ QUERIES = {
  COUNT(*) FILTER (WHERE odds_open_p1 IS NOT NULL AND odds_open_p2 IS NOT NULL AND duplicate_of IS NULL)
  FROM public.matches WHERE match_date IS NOT NULL
  GROUP BY 1 ORDER BY 1 LIMIT %s""",
- 'categories': """SELECT CASE WHEN %s = %s THEN 'unknown' ELSE 'unknown' END LIMIT %s"""
-}
-# No dynamic column selection: category counts come from fixed aggregate query below.
-QUERIES['categories'] = """SELECT
+ 'categories': """SELECT
  COUNT(*) FILTER (WHERE status=3),
  COUNT(*) FILTER (WHERE status=9),
  COUNT(*) FILTER (WHERE status IN (5,8,10)),
@@ -114,6 +125,7 @@ QUERIES['categories'] = """SELECT
  COUNT(*) FILTER (WHERE odds_open_source IS NULL),
  COUNT(*) FILTER (WHERE odds_open_captured_at IS NOT NULL AND odds_open_status IN (2,3,9,10))
  FROM public.matches LIMIT %s"""
+}
 EXPECTED = {'match_id':'uuid','match_date':'date','player1':'varchar','player2':'varchar',
 'gender':'varchar','level':'varchar','surface':'varchar','status':'int2','duplicate_of':'uuid',
 'has_pbp':'bool','pbp_s3_path':'varchar','pbp_completeness':'float8',
@@ -182,6 +194,8 @@ def serialize(report):
 def main():
     conn=None
     try:
+        if importlib.util.find_spec('psycopg2') is None:
+            raise AuditFailure('dependency_unavailable')
         import psycopg2
         vals,port=settings()
         conn=psycopg2.connect(host=vals['POSTGRES_HOST'],port=port,user=vals['POSTGRES_USER'],
@@ -195,7 +209,7 @@ def main():
         return 0
     except AuditFailure as exc:
         allowed={'connection_config_unavailable','readonly_not_confirmed','schema_mismatch',
-                 'unexpected_result','result_limit','output_limit'}
+                 'unexpected_result','result_limit','output_limit','dependency_unavailable'}
         code=exc.args[0] if exc.args and exc.args[0] in allowed else 'audit_failed'
     except Exception as exc:
         code={'57014':'query_timeout','55P03':'lock_timeout','42P01':'table_unavailable',
