@@ -4,6 +4,7 @@ import importlib.util
 import ipaddress
 import json
 import logging
+import math
 import os
 from pathlib import Path
 import re
@@ -12,6 +13,7 @@ import sys
 import time
 
 PREFIXES = ('nbbet_details/', 'nbbet_stats/', 'nbbet_raw/', 'pbp/')
+UNAVAILABLE_REASONS = ('access_denied', 'transport_error', 'response_invalid', 'service_error')
 SAMPLE_LIMIT = 24
 PAGE_SIZE = 500
 MAX_PAGES = 20
@@ -84,6 +86,20 @@ def utc(value):
     if not 1970 <= value.year <= 2100:
         raise AuditFailure('response_invalid')
     return value
+
+
+def latest_age_hours(now, modified):
+    now = utc(now)
+    if modified is None:
+        return None
+    delta = now - utc(modified)
+    # Exact integer microseconds before division; preserve tiny negative ages.
+    microseconds = (delta.days * 86400 + delta.seconds) * 1000000 + delta.microseconds
+    hours = microseconds / 3600000000
+    # Both timestamps are restricted to 1970..2100 by utc().
+    if not math.isfinite(hours) or abs(hours) > 131 * 366 * 24:
+        raise AuditFailure('response_invalid')
+    return hours
 
 
 def parse_env(text):
@@ -242,10 +258,11 @@ class ReadOnlyS3:
 def prefix_stats(s3, bucket, prefix, now):
     report = dict(prefix=prefix, complete=False, reason='page_limit', pages=0,
                   objects_observed=0, bytes_observed=0, objects_24h_observed=0,
-                  latest_modified_utc=None)
+                  latest_modified_utc=None, latest_age_hours=None, count_kind='lower_bound')
     token, seen = None, set()
     latest = None
     try:
+        now = utc(now)
         for _ in range(MAX_PAGES):
             args = dict(Bucket=bucket, Prefix=prefix, MaxKeys=PAGE_SIZE)
             if token is not None:
@@ -275,13 +292,17 @@ def prefix_stats(s3, bucket, prefix, now):
             objects = count(report['objects_observed'] + len(content))
             total_bytes = count(report['bytes_observed'] + size)
             total_recent = count(report['objects_24h_observed'] + recent)
-            report.update(pages=report['pages'] + 1, objects_observed=objects,
-                          bytes_observed=total_bytes, objects_24h_observed=total_recent)
+            candidate_latest = latest
             if page_latest is not None:
-                latest = page_latest if latest is None else max(latest, page_latest)
-                report['latest_modified_utc'] = latest.isoformat()
+                candidate_latest = page_latest if latest is None else max(latest, page_latest)
+            candidate_age = latest_age_hours(now, candidate_latest)
+            report.update(pages=report['pages'] + 1, objects_observed=objects,
+                          bytes_observed=total_bytes, objects_24h_observed=total_recent,
+                          latest_modified_utc=candidate_latest.isoformat() if candidate_latest else None,
+                          latest_age_hours=candidate_age)
+            latest = candidate_latest
             if not truncated:
-                report.update(complete=True, reason='ok')
+                report.update(complete=True, reason='ok', count_kind='total')
                 break
             seen.add(next_token)
             token = next_token
@@ -295,7 +316,8 @@ def head_sample(s3, bucket, paths):
         raise AuditFailure('response_invalid')
     paths = list(dict.fromkeys(paths))  # Extra defence against duplicate DB rows.
     report = dict(sample_unique_paths=len(paths), checked=0, found=0, missing=0,
-                  unavailable=0, invalid_paths=0, complete=False, reason='ok')
+                  unavailable=0, invalid_paths=0, complete=False, reason='ok',
+                  unavailable_by_reason={reason: 0 for reason in UNAVAILABLE_REASONS})
     for key in paths:
         if not key.startswith('pbp/') or not key.endswith('.parquet') or len(key.encode('utf-8')) > 1024 or any(ord(c) < 32 for c in key):
             report['invalid_paths'] += 1
@@ -316,8 +338,13 @@ def head_sample(s3, bucket, paths):
             if reason == 'not_found':
                 report['missing'] += 1
             else:
+                category = reason if reason in UNAVAILABLE_REASONS else 'service_error'
+                report['unavailable_by_reason'][category] += 1
                 report['unavailable'] += 1
         report['checked'] += 1
+    if (sum(report['unavailable_by_reason'].values()) != report['unavailable'] or
+            report['found'] + report['missing'] + report['unavailable'] != report['checked']):
+        raise AuditFailure('response_invalid')
     report['complete'] = report['checked'] == len(paths) and not report['unavailable'] and not report['invalid_paths']
     if not report['complete'] and report['reason'] == 'ok':
         report['reason'] = 'response_invalid' if report['invalid_paths'] else 'service_error'

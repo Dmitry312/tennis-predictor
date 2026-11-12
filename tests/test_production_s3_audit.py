@@ -136,6 +136,83 @@ class S3AuditTests(unittest.TestCase):
         self.assertEqual(result['reason'], 'transport_error')
         self.assertNotIn(SECRET, a.serialize(result))
 
+    def test_freshness_empty_past_and_future(self):
+        empty_result = a.prefix_stats(a.ReadOnlyS3(Client()), BUCKET, 'pbp/', NOW)
+        self.assertIsNone(empty_result['latest_age_hours'])
+        self.assertIsNone(empty_result['latest_modified_utc'])
+        self.assertEqual((empty_result['complete'], empty_result['reason'], empty_result['count_kind']),
+                         (True, 'ok', 'total'))
+        for offset, expected_age, recent in [(dt.timedelta(days=-2), 48, 0),
+                                             (dt.timedelta(hours=2), -2, 1)]:
+            response = page('pbp/')
+            response['Contents'][0]['LastModified'] = NOW + offset
+            result = a.prefix_stats(a.ReadOnlyS3(Client({'pbp/': [response]})), BUCKET, 'pbp/', NOW)
+            self.assertEqual(result['latest_age_hours'], expected_age)
+            self.assertEqual(result['objects_24h_observed'], recent)
+            self.assertTrue(result['complete'])  # No cadence-based error inferred.
+            self.assertEqual(result['reason'], 'ok')
+        self.assertLess(a.latest_age_hours(NOW, NOW + dt.timedelta(microseconds=1)), 0)
+        self.assertEqual(a.latest_age_hours(NOW, NOW.astimezone(dt.timezone(dt.timedelta(hours=3)))), 0)
+        for invalid in (SECRET, NOW.date(), NOW.replace(tzinfo=None),
+                        dt.datetime.min.replace(tzinfo=dt.timezone.utc),
+                        dt.datetime.max.replace(tzinfo=dt.timezone.utc)):
+            with self.assertRaises(a.AuditFailure):
+                a.latest_age_hours(NOW, invalid)
+            with self.assertRaises(a.AuditFailure):
+                a.latest_age_hours(invalid, None)
+        self.assertGreater(a.latest_age_hours(NOW, dt.datetime(1970, 1, 1, tzinfo=dt.timezone.utc)), 0)
+
+    def test_missing_last_modified_keeps_only_validated_pages(self):
+        first, second = page('pbp/', True, 'continue'), page('pbp/')
+        first['Contents'][0]['LastModified'] = NOW - dt.timedelta(hours=2)
+        del second['Contents'][0]['LastModified']
+        result = a.prefix_stats(a.ReadOnlyS3(Client({'pbp/': [first, second]})), BUCKET, 'pbp/', NOW)
+        self.assertEqual((result['complete'], result['reason'], result['count_kind']),
+                         (False, 'response_invalid', 'lower_bound'))
+        self.assertEqual((result['objects_observed'], result['bytes_observed'], result['latest_age_hours']), (1, 7, 2))
+        result = a.prefix_stats(a.ReadOnlyS3(Client({'pbp/': [second]})), BUCKET, 'pbp/', NOW)
+        self.assertIsNone(result['latest_age_hours'])
+        self.assertIsNone(result['latest_modified_utc'])
+        self.assertEqual(result['objects_observed'], 0)
+        self.assertNotIn(SECRET, a.serialize(result))
+
+    def test_partial_budget_counters_are_lower_bounds(self):
+        for setting, reason in [('MAX_PAGES', 'page_limit'), ('MAX_CALLS', 'request_limit'),
+                                ('MAX_HTTP_ATTEMPTS', 'http_attempt_limit')]:
+            client = Client({'pbp/': [page('pbp/', True, 'continue'), page('pbp/')]})
+            with patch.object(a, setting, 1):
+                result = a.prefix_stats(a.ReadOnlyS3(client), BUCKET, 'pbp/', NOW)
+            self.assertEqual((result['complete'], result['reason'], result['count_kind']),
+                             (False, reason, 'lower_bound'))
+            self.assertEqual((result['objects_observed'], result['bytes_observed']), (1, 7))
+            self.assertEqual(result['latest_age_hours'], 0)
+        for status, reason in [(403, 'access_denied'), (404, 'not_found')]:
+            result = a.prefix_stats(a.ReadOnlyS3(Client({'pbp/': [S3Error(status)]})), BUCKET, 'pbp/', NOW)
+            self.assertFalse(result['complete'])
+            self.assertEqual(result['reason'], reason)
+            self.assertEqual(result['count_kind'], 'lower_bound')
+
+    def test_unavailable_reason_accounting(self):
+        keys = ['pbp/' + str(i) + '.parquet' for i in range(7)]
+        client = Client(heads={keys[1]: S3Error(404), keys[2]: S3Error(403),
+                              keys[3]: TimeoutError(SECRET), keys[4]: {},
+                              keys[5]: S3Error(500), keys[6]: a.AuditFailure('operation_forbidden')})
+        result = a.head_sample(a.ReadOnlyS3(client), BUCKET, keys)
+        self.assertEqual(result['unavailable_by_reason'],
+                         dict(access_denied=1, transport_error=1, response_invalid=1, service_error=2))
+        self.assertEqual(result['unavailable'], sum(result['unavailable_by_reason'].values()))
+        self.assertEqual(result['checked'], result['found'] + result['missing'] + result['unavailable'])
+        self.assertEqual((result['found'], result['missing'], result['unavailable']), (1, 1, 5))
+        text = a.serialize(result)
+        for forbidden in [SECRET, BUCKET, 'https://', 's3://', 'pbp/0.parquet', 'Traceback']:
+            self.assertNotIn(forbidden, text)
+        with patch.object(a, 'MAX_CALLS', 1):
+            result = a.head_sample(a.ReadOnlyS3(Client(heads={keys[0]: S3Error(403)})), BUCKET, keys[:2])
+        self.assertEqual((result['checked'], result['unavailable'], result['reason']), (1, 1, 'request_limit'))
+        self.assertEqual(sum(result['unavailable_by_reason'].values()), 1)
+        result = a.head_sample(a.ReadOnlyS3(Client(heads={keys[0]: S3Error(404)})), BUCKET, keys[:1])
+        self.assertEqual((result['missing'], result['unavailable'], sum(result['unavailable_by_reason'].values())), (1, 0, 0))
+
     def test_empty_bucket(self):
         result = a.report(a.ReadOnlyS3(Client()), BUCKET, NOW, {'unique_pbp_paths': 0}, [])
         self.assertTrue(result['complete'])

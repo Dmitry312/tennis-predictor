@@ -91,16 +91,31 @@ must be assessed before interpreting absent PBP; this audit makes no such claim.
 ## Report interpretation
 
 - Per-prefix objects_observed, bytes_observed, objects_24h_observed and
-  latest_modified_utc summarize successfully validated pages. They are totals
-  only when that prefix's complete=true; otherwise they are partial observations
-  with a fixed reason. Other prefixes can complete even when one is denied.
+  latest_modified_utc summarize successfully validated pages. Each prefix includes
+  complete, reason and count_kind: total only for complete=true; lower_bound for
+  incomplete scans. Incomplete objects_observed/bytes_observed are observed lower
+  bounds, not full inventory totals. No limits were increased. Other prefixes can complete even when one is denied.
 - objects_24h_observed means LastModified >= DB reference time minus 24h; it is
   not creation count. Concurrent objects/clock differences can be newer than the
   reference. Latest modification says nothing about Parquet row validity.
+- latest_age_hours is (audit time - latest observed LastModified) in hours;
+  null for no validated objects. Both timestamps must be timezone-aware datetime,
+  normalized to UTC, with years 1970..2100. Arithmetic uses integer microseconds
+  before division and checks finite/range output. Future timestamps retain a
+  negative age, including subsecond differences. For partial scans this is the age
+  of the latest **observed** object, not necessarily the prefix's true latest one.
+  Old ages or zero objects_24h_observed do not cause freshness errors: expected
+  upload cadence is not established by this audit.
 - pbp_head_sample: sample_unique_paths, checked, found, missing, unavailable,
   invalid_paths. A provider 404 is classified missing; 403/timeouts/invalid
   metadata are unavailable, not absence. This does not inspect contents or prove
   that a file actually contains every referring match.
+- unavailable_by_reason contains only access_denied, transport_error,
+  response_invalid and service_error counters (including zeros). Their sum must
+  equal unavailable; checked must equal found + missing + unavailable. A 404 is
+  missing, not unavailable. Budget-blocked/unattempted paths do not inflate these
+  counters. Other fixed internal failures are folded into service_error, without
+  exposing their messages. Prefix reason codes remain fixed and separate.
 - Sample complete means all sampled keys got a definitive found/missing outcome.
   all_unique_paths_checked is separate and false when only a subset was checked.
 - Top-level complete means all four listings and the **bounded sample** finished
@@ -121,6 +136,8 @@ Offline tests fake SDK events/responses and DB cursors: pagination, empty bucket
 page/request/time/HTTP budgets, token loops, malformed metadata, duplicate paths,
 missing/access-denied/timeout outcomes, URL rejection, write-operation guards,
 readonly/schema/SQL bounds, output limits and suppression of secret markers.
+Freshness tests include empty/missing LastModified, old/future/subsecond timestamps,
+invalid types/ranges/timezones, partial lower bounds and error-counter invariants.
 No real S3 SDK/service, credential permissions or production data is tested.
 All four SQL queries were additionally checked via PREPARE/EXECUTE on a disposable
 local PostgreSQL16 with pg_catalog search_path, READ ONLY REPEATABLE READ, and
