@@ -1,0 +1,35 @@
+name: NB-Bet release scripts checks
+
+on:
+  pull_request:
+    paths:
+      - 'infra/deploy/**'
+      - '.github/workflows/nbbet-python-*.yml'
+      - 'infra/runbooks/nbbet-python-release.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  shell-syntax:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Check shell syntax
+        run: bash -n infra/deploy/nbbet_python_cutover.sh
+      - name: Check workflow YAML parse
+        run: |
+          python - <<'PY'
+          import pathlib
+          import yaml
+          for path in pathlib.Path('.github/workflows').glob('nbbet-python-*.yml'):
+              with path.open() as f:
+                  data = yaml.safe_load(f)
+              assert isinstance(data, dict), path
+              assert 'jobs' in data, path
+              print('PARSE_OK', path)
+          PY
