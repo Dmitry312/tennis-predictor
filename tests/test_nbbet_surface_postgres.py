@@ -54,7 +54,7 @@ def test_flush_persists_new_surface_without_overwriting_existing(monkeypatch, pg
         outcome(fresh, "hard"), outcome(existing, "clay"), outcome(unknown, None),
     ], "test", 0, None, "test-bucket", False)
     with pg_engine.connect() as conn:
-        values = dict(conn.execute(select(Match.match_id, Match.surface)))
+        values = {mid: surface for mid, surface in conn.execute(select(Match.match_id, Match.surface))}
     assert values[fresh] == "hard"
     assert values[existing] == "grass"
     assert values[unknown] is None
@@ -72,6 +72,6 @@ def test_flush_saves_surface_on_retry_later_and_status_changed(monkeypatch, pg_e
     ]
     detail_job.flush(outcomes, "test", 0, None, "test-bucket", False)
     with pg_engine.connect() as conn:
-        values = dict(conn.execute(select(Match.match_id, Match.surface)))
+        values = {mid: surface for mid, surface in conn.execute(select(Match.match_id, Match.surface))}
     assert values[a] == "clay"
     assert values[b] == "grass"
