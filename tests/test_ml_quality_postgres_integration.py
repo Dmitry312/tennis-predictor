@@ -42,12 +42,14 @@ class PostgreSQLIntegration(unittest.TestCase):
             c.execute('TRUNCATE public.matches')
 
     def run_audit(self):
+        self.conn.autocommit = False
         with self.conn.cursor() as c:
             c.execute('BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
         try:
             return a.audit(self.conn)
         finally:
             self.conn.rollback()
+            self.conn.autocommit = True
 
     def test_empty_schema_and_queries(self):
         report = self.run_audit()
