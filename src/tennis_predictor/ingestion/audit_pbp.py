@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pandas as pd
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from tennis_predictor.config import get_settings
 from tennis_predictor.storage.db import engine
@@ -30,6 +30,10 @@ def inspect_match(frame: pd.DataFrame) -> dict:
         issues.append("duplicate_point_index")
     if frame["point_winner"].isna().any():
         issues.append("unresolved_point_winner")
+    if frame[["set_num", "game_num", "point_num"]].isna().any().any():
+        issues.append("null_point_index")
+        return {"status": "review", "points": int(len(frame)), "games": 0,
+                "incomplete_games": [], "issues": sorted(set(issues))}
     incomplete = []
     for (s, g), group in frame.groupby(["set_num", "game_num"], dropna=False):
         nums = sorted(set(group["point_num"].dropna().astype(int)))
@@ -52,8 +56,8 @@ def inspect_match(frame: pd.DataFrame) -> dict:
     }
 
 
-def run(days: int, max_matches: int, max_object_bytes: int) -> dict:
-    if not 1 <= days <= 31 or not 1 <= max_matches <= 2000:
+def run(days: int, max_matches: int, max_object_bytes: int, max_files: int = 1000) -> dict:
+    if not 1 <= days <= 31 or not 1 <= max_matches <= 2000 or not 1 <= max_files <= 2000:
         raise ValueError("days must be 1..31 and max_matches 1..2000")
     today = datetime.now(MOSCOW).date()
     start_local = datetime.combine(today - timedelta(days=days), datetime.min.time(), MOSCOW)
@@ -61,6 +65,8 @@ def run(days: int, max_matches: int, max_object_bytes: int) -> dict:
     start = start_local.astimezone(UTC).replace(tzinfo=None)
     end = end_local.astimezone(UTC).replace(tzinfo=None)
     with engine.connect() as conn:
+        conn.execute(text("SET TRANSACTION READ ONLY"))
+        conn.execute(text("SET LOCAL statement_timeout = '10000ms'"))
         rows = conn.execute(
             select(Match.match_id, Match.nbbet_match_id, Match.status,
                    Match.tournament_name, Match.pbp_s3_path, Match.pbp_completeness)
@@ -83,6 +89,8 @@ def run(days: int, max_matches: int, max_object_bytes: int) -> dict:
                                       "status": "missing", "issues": ["missing_pbp_path"]})
     s3 = get_s3_client()
     bucket = get_settings().s3_bucket
+    if len(paths) > max_files:
+        raise ValueError(f"{len(paths)} S3 objects exceeds --max-files={max_files}")
     for path, members in paths.items():
         try:
             meta = s3.head_object(Bucket=bucket, Key=path)
@@ -118,8 +126,12 @@ def main():
     parser.add_argument("--days", type=int, default=7)
     parser.add_argument("--max-matches", type=int, default=1000)
     parser.add_argument("--max-object-mb", type=int, default=10)
+    parser.add_argument("--max-files", type=int, default=1000)
     args = parser.parse_args()
-    print(json.dumps(run(args.days, args.max_matches, args.max_object_mb * 1024**2),
+    if not 1 <= args.max_object_mb <= 100:
+        parser.error("--max-object-mb must be 1..100")
+    print(json.dumps(run(args.days, args.max_matches, args.max_object_mb * 1024**2,
+                         args.max_files),
                      ensure_ascii=False, indent=2))
 
 
