@@ -71,6 +71,23 @@ class MatchDetails:
     players: dict | None = None  # {"p1": match["3"], "p2": match["5"]}
     raw_page_tennis_event: dict | None = None  # props.initialState.pageTennisEvent целиком
     odds_open: tuple[float, float] | None = None  # odds_pair(match["30"]) — запасной путь, см. sweep.py
+    surface: str | None = None
+
+
+_SURFACE_MARKERS = {
+    "hard": {"hard", "хард"},
+    "clay": {"clay", "грунт"},
+    "grass": {"grass", "трава"},
+}
+
+
+def parse_surface(value: object) -> str | None:
+    """Return a surface only for a single unambiguous standalone marker."""
+    if not isinstance(value, str):
+        return None
+    tokens = set(re.findall(r"[^\W\d_]+", value.casefold(), flags=re.UNICODE))
+    matches = [surface for surface, markers in _SURFACE_MARKERS.items() if tokens & markers]
+    return matches[0] if len(matches) == 1 else None
 
 
 def fetch_match_page(session, slug: str) -> str | None:
@@ -112,6 +129,7 @@ def parse_match_page(html: str, nbbet_match_id: int) -> MatchDetails:
         players={"p1": match.get("3"), "p2": match.get("5")},
         raw_page_tennis_event=page_tennis_event,
         odds_open=odds_pair(match.get("30")),
+        surface=parse_surface((match.get("1") or {}).get("1") if isinstance(match.get("1"), dict) else None),
     )
 
 
