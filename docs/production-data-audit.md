@@ -8,13 +8,20 @@ No deployment or production query is authorized by this document.
 ## Connection and transaction
 
 The existing `/root/Tennis_pelmen_model/.venv/bin/python` is used with `-I -B`:
-no cwd/project imports, no Python bytecode writes. psycopg2 and python-dotenv are
-checked at runtime without installation; a missing/broken dependency fails closed.
+no cwd/project imports, no Python bytecode writes. Only psycopg2 is
+required and checked at runtime without installation; a missing/broken driver fails closed.
 Actual production dependency availability has NOT been probed during preparation.
-The existing `.env` is parsed privately (no source/eval/interpolation). Only the
+The existing `.env` is parsed privately by a bounded stdlib parser (no dotenv,
+source, eval or interpolation). Only the
 five POSTGRES connection fields are consumed, with matching environment variables
 taking precedence. All five must be explicit, including POSTGRES_PORT. Missing
 values or ${...} interpolation stop the audit; no guessed credentials or defaults.
+The file is limited to 64 KiB and each value to 4096 characters. Supported syntax:
+optional export, KEY=value, single/double quoted literal values, and trailing #
+comments. Duplicate connection keys, escapes, multiline values, NUL, malformed
+quotes and ambiguous unquoted values fail closed. Unrelated keys are ignored.
+The file may be absent only when all five fields exist in the environment. Ports
+must contain 1..5 ASCII digits with numeric value 1..65535; no fallback is used.
 No DSN, credentials or exception messages are printed. No Docker command is used.
 
 libpq startup options enforce default_transaction_read_only=on,
@@ -43,7 +50,11 @@ No workflow input, shell expansion or caller-provided SQL/identifier is accepted
 The jobs query includes runs started in the last 24 hours **or still marked
 running**, even when started earlier. Thus job counts/error totals include those
 older running rows; they are not pure 24-hour totals. Negative heartbeat ages
-expose future timestamps rather than silently clamping them. Empty jobs results
+expose future timestamps rather than silently clamping them. Types of both the
+reference clock and heartbeat must be naive datetime. Integer arithmetic avoids
+float rounding; even a 1-microsecond future heartbeat reports -1 second (floor).
+Absolute ages over 3660 days fail with heartbeat_age_out_of_range; this is a
+sanity bound, not a freshness threshold. Missing heartbeat remains null. Empty jobs results
 mean no matching journal entries, not proof that cron is healthy. Marked duplicate
 counts are not a full duplicate detection algorithm. Match dates are event dates,
 not ingestion timestamps; latest_created/latest_details describe different work.
@@ -71,8 +82,14 @@ OS atime and interpreter startup hooks may still cause incidental system writes.
 Offline tests use fake DB cursors/connections: SQL allowlist, bound parameters,
 row limits, malicious database strings, dates/numbers, serialization budget,
 read-only setup, rollback/cleanup, schema mismatch and sanitized error codes.
-They do not prove real PostgreSQL parsing/plans, credentials, installed dependencies
-or production load; no PostgreSQL connection was made to run these tests.
+Additional local verification executed all five parameterized queries (PREPARE /
+EXECUTE) against disposable PostgreSQL 16 with search_path=pg_catalog, public fixture
+tables and a READ ONLY REPEATABLE READ transaction. Explicit public table names
+resolve independently of search_path; catalog relations and regnamespace are
+qualified and unqualified functions/operators are PostgreSQL built-ins. The local
+container had no network, exposed ports or persistent volume and was removed.
+These checks do not prove production credentials, installed dependencies, data,
+plans or load; no production PostgreSQL connection was made.
 
 After separate review/merge authorization, verify the production deploy remains
 blocked. Any manual audit dispatch requires a separate explicit authorization.

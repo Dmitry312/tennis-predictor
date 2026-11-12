@@ -7,11 +7,15 @@ import datetime as dt
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
 import sys
 
 MAX_ROWS = 32
 MAX_OUTPUT = 16384
+MAX_HEARTBEAT_AGE = dt.timedelta(days=3660)
+CONNECTION_FIELDS = ('POSTGRES_HOST', 'POSTGRES_PORT', 'POSTGRES_USER',
+                     'POSTGRES_PASSWORD', 'POSTGRES_DB')
 JOBS = ('nbbet-detail', 'nbbet-refresh', 'nbbet-sweep', 'nbbet-sweep-wide', 'health')
 STATUSES = ('running', 'ok', 'error')
 MATCH_STATUSES = tuple(range(1, 11))
@@ -91,8 +95,78 @@ def timestamp(value, date_only=False):
 
 
 def age(now, value):
+    timestamp(now)
     timestamp(value)
-    return None if value is None else int((now - value).total_seconds())
+    if now is None:
+        raise AuditFailure('unexpected_result')
+    if value is None:
+        return None
+    delta = now - value
+    if abs(delta) > MAX_HEARTBEAT_AGE:
+        raise AuditFailure('heartbeat_age_out_of_range')
+    # Integer floor preserves the sign even for a subsecond future heartbeat.
+    return (delta.days * 86400000000 + delta.seconds * 1000000 + delta.microseconds) // 1000000
+
+
+def parse_env(text):
+    """Small literal .env subset, not a shell/dotenv interpreter.
+
+    Only the five connection keys are parsed. Single/double quoted literal values
+    and unquoted values without whitespace/quotes/backslashes are accepted.
+    No escaping, interpolation, multiline values or duplicate connection keys.
+    """
+    if len(text.encode('utf-8')) > 65536 or '\x00' in text:
+        raise AuditFailure('connection_config_unavailable')
+    settings = {}
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        match = re.match(r'^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\b(.*)$', line)
+        if not match or match[1] not in CONNECTION_FIELDS:
+            continue
+        key, rest = match[1], match[2].lstrip()
+        if key in settings or not rest.startswith('='):
+            raise AuditFailure('connection_config_unavailable')
+        raw = rest[1:].strip()
+        if raw.startswith(('"', "'")):
+            quote = raw[0]
+            end = raw.find(quote, 1)
+            if end < 0 or (raw[end + 1:].strip() and not raw[end + 1:].lstrip().startswith('#')):
+                raise AuditFailure('connection_config_unavailable')
+            value = raw[1:end]
+        else:
+            match = re.fullmatch(r"([^\s#\"'\\]*)(?:\s+#.*)?", raw)
+            if match is None:
+                raise AuditFailure('connection_config_unavailable')
+            value = match[1]
+        if '\\' in value or '${' in value or len(value) > 4096:
+            raise AuditFailure('connection_config_unavailable')
+        settings[key] = value
+    return settings
+
+
+def connection_values():
+    try:
+        with Path('/root/Tennis_pelmen_model/.env').open('rb') as stream:
+            raw = stream.read(65537)
+        if len(raw) > 65536:
+            raise AuditFailure('connection_config_unavailable')
+        settings = parse_env(raw.decode('utf-8'))
+    except FileNotFoundError:
+        settings = {}  # Allowed only if every required field is supplied by env.
+    except (OSError, UnicodeError):
+        raise AuditFailure('connection_config_unavailable') from None
+    values = {key: os.environ.get(key, settings.get(key)) for key in CONNECTION_FIELDS}
+    if any(type(v) is not str or not v or len(v) > 4096 or
+           any(c in v for c in ('\x00', '\r', '\n')) or '${' in v for v in values.values()):
+        raise AuditFailure('connection_config_unavailable')
+    if not re.fullmatch(r'[0-9]{1,5}', values['POSTGRES_PORT']):
+        raise AuditFailure('connection_config_unavailable')
+    port = int(values['POSTGRES_PORT'])
+    if not 1 <= port <= 65535:
+        raise AuditFailure('connection_config_unavailable')
+    return values, port
 
 
 def audit(connection):
@@ -114,7 +188,10 @@ def audit(connection):
                 actual[table][column] = kind
         if actual != EXPECTED:
             raise AuditFailure('schema_mismatch')
-        cutoff = now - dt.timedelta(days=1)
+        try:
+            cutoff = now - dt.timedelta(days=1)
+        except OverflowError:
+            raise AuditFailure('unexpected_result') from None
         match_rows = rows(cursor, 'matches', (cutoff, [3, 9, 10], 5, ['tour', 'challenger'], 1), 1)
         if len(match_rows) != 1 or len(match_rows[0]) != 12:
             raise AuditFailure('unexpected_result')
@@ -158,23 +235,13 @@ def serialize(report):
 def main():
     connection = None
     try:
-        for module in ('psycopg2', 'dotenv'):
-            if importlib.util.find_spec(module) is None:
-                raise AuditFailure('dependency_unavailable')
+        if importlib.util.find_spec('psycopg2') is None:
+            raise AuditFailure('dependency_unavailable')
         try:
             import psycopg2
-            from dotenv import dotenv_values
         except ImportError:
             raise AuditFailure('dependency_unavailable') from None
-        # Parse privately, without shell sourcing, interpolation or app imports.
-        settings = dotenv_values('/root/Tennis_pelmen_model/.env', interpolate=False)
-        values = {key: os.environ.get(key, settings.get(key)) for key in
-                  ('POSTGRES_HOST', 'POSTGRES_PORT', 'POSTGRES_USER', 'POSTGRES_PASSWORD', 'POSTGRES_DB')}
-        if any(not isinstance(v, str) or not v or '${' in v for v in values.values()):
-            raise AuditFailure('connection_config_unavailable')
-        port = int(values['POSTGRES_PORT'])
-        if not 1 <= port <= 65535:
-            raise AuditFailure('connection_config_unavailable')
+        values, port = connection_values()
         connection = psycopg2.connect(
             host=values['POSTGRES_HOST'], port=port, user=values['POSTGRES_USER'],
             password=values['POSTGRES_PASSWORD'], dbname=values['POSTGRES_DB'],
@@ -191,7 +258,7 @@ def main():
         # Only locally defined codes; never render database exceptions.
         allowed = {'result_limit', 'unexpected_result', 'readonly_not_confirmed',
                    'schema_mismatch', 'output_limit', 'dependency_unavailable',
-                   'connection_config_unavailable'}
+                   'connection_config_unavailable', 'heartbeat_age_out_of_range'}
         code = error.args[0] if error.args and error.args[0] in allowed else 'audit_failed'
     except Exception as error:
         code = {'42P01': 'table_unavailable', '42703': 'schema_mismatch',
