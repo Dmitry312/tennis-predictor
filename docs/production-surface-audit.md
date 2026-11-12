@@ -87,8 +87,17 @@ prefix before opening in spreadsheet software.
 The remote script buffers the complete bounded export, then sends a JSON envelope
 to stdout redirected to a runner .part file, never the Actions console. No files
 are created on production. Runner-only --unpack validates headers, classes,
-markers, CSV safety, category subsets and reconciled summary before creating the
-fixed artifact filenames. Only a constant completion/error code appears in logs.
+markers, CSV safety, category subsets and CSV-derived summary before creating the
+fixed artifact filenames. existing_surface_nonempty is an explicit exception:
+it is aggregated directly from SQL and the current six-column CSVs contain no
+stored surface values, so the runner cannot independently recompute this metric.
+Each scope labels it existing_surface_nonempty_source=sql_only_not_recomputed_from_csv.
+The runner checks an exact non-bool integer, nonnegative value, each scope's match
+count bound, and canonical <= all; these are consistency checks, not proof of the
+SQL value. A plausible in-range value can pass without CSV evidence. Trust for
+this metric rests on the reviewed SQL/script and authenticated SSH transport.
+All other counts, classes, percentages and category subsets retain CSV rebuild
+and reconciliation checks. Missing/altered provenance is rejected. Only a constant completion/error code appears in logs.
 No raw database exceptions or connection settings are printed. Artifact access
 inherits repository permissions; in a public repository this is not a private
 export channel. Titles/counts are intentionally exported, credentials are not.

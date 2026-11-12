@@ -179,6 +179,7 @@ def percentage(part, total):
 def scope_summary():
     return dict(matches_total=0, unique_names=0, name_groups_including_null=0,
                 null_name_matches=0, blank_name_matches=0, existing_surface_nonempty=0,
+                existing_surface_nonempty_source='sql_only_not_recomputed_from_csv',
                 categories={category: 0 for category in CATEGORIES})
 
 
@@ -406,13 +407,20 @@ def unpack(source, destination):
         scopes = summary['scopes']
         expected = (count(scopes['all']['matches_total']), count(scopes['canonical']['matches_total']),
                     count(scopes['all']['unique_names']), count(scopes['canonical']['unique_names']))
-        verified = rebuilt.finish(now, expected)
+        expected_export = rebuilt.finish(now, expected)
+        # CSV has no stored surface values. This SQL-only metric is NOT
+        # independently recomputed: validate type/range/subset, retain provenance.
+        sql_existing = {scope: count(scopes[scope]['existing_surface_nonempty'])
+                        for scope in ('all', 'canonical')}
+        if sql_existing['canonical'] > sql_existing['all']:
+            raise AuditFailure('artifact_invalid')
         for scope in ('all', 'canonical'):
-            existing = count(scopes[scope]['existing_surface_nonempty'])
+            existing = sql_existing[scope]
             if existing > expected[0 if scope == 'all' else 1]:
                 raise AuditFailure('artifact_invalid')
-            verified['summary']['scopes'][scope]['existing_surface_nonempty'] = existing
-        if verified['summary'] != summary or verified['csv'] != documents:
+            expected_export['summary']['scopes'][scope]['existing_surface_nonempty'] = existing
+        # All remaining scope fields and CSV subsets still match the rebuild.
+        if expected_export['summary'] != summary or expected_export['csv'] != documents:
             raise AuditFailure('artifact_invalid')
         target = Path(destination)
         target.mkdir(mode=0o700, parents=True, exist_ok=False)

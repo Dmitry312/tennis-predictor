@@ -225,6 +225,56 @@ class SurfaceAuditTests(unittest.TestCase):
                 self.assertFalse(dest.exists())
                 self.assertNotIn(SECRET, out.getvalue())
 
+    def test_sql_only_surface_metric_bounds_and_provenance(self):
+        original = a.audit(Connection())
+        for info in original['summary']['scopes'].values():
+            self.assertEqual(info['existing_surface_nonempty_source'], 'sql_only_not_recomputed_from_csv')
+        invalid = [(-1, 0), (1, -1), (22, 1), (21, 15), (0, 1), (2, 3),
+                   (True, 0), (1.0, 0), ('1', 0)]
+        with tempfile.TemporaryDirectory() as root:
+            source = Path(root) / 'input.json'
+            for i, (all_value, canonical_value) in enumerate(invalid):
+                variant = json.loads(a.serialize(original))
+                scopes = variant['summary']['scopes']
+                scopes['all']['existing_surface_nonempty'] = all_value
+                scopes['canonical']['existing_surface_nonempty'] = canonical_value
+                source.write_text(a.serialize(variant), encoding='utf-8')
+                destination = Path(root) / ('invalid-' + str(i))
+                with self.subTest(all=all_value, canonical=canonical_value), \
+                     contextlib.redirect_stdout(io.StringIO()) as output:
+                    self.assertEqual(a.unpack(source, destination), 1)
+                self.assertFalse(destination.exists())
+                self.assertEqual(output.getvalue().strip(), 'SURFACE_AUDIT_ARTIFACT_FAILED')
+            for i, label in enumerate(('csv_verified', None)):
+                variant = json.loads(a.serialize(original))
+                info = variant['summary']['scopes']['all']
+                if label is None:
+                    del info['existing_surface_nonempty_source']
+                else:
+                    info['existing_surface_nonempty_source'] = label
+                source.write_text(a.serialize(variant), encoding='utf-8')
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(a.unpack(source, Path(root) / ('provenance-' + str(i))), 1)
+
+    def test_sql_only_metric_is_not_claimed_as_csv_recomputed(self):
+        report = a.audit(Connection())
+        report['summary']['scopes']['all']['existing_surface_nonempty'] = 5
+        report['summary']['scopes']['canonical']['existing_surface_nonempty'] = 3
+        # CSV cannot confirm these plausible SQL-only values; acceptance must
+        # explicitly retain the non-verifiable provenance, not claim a rebuild.
+        with tempfile.TemporaryDirectory() as root:
+            source, dest = Path(root) / 'input.json', Path(root) / 'report'
+            source.write_text(a.serialize(report), encoding='utf-8')
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(a.unpack(source, dest), 0)
+            scopes = json.loads((dest / 'summary.json').read_text())['scopes']
+            self.assertEqual(scopes['all']['existing_surface_nonempty'], 5)
+            self.assertEqual(scopes['canonical']['existing_surface_nonempty'], 3)
+            for info in scopes.values():
+                self.assertEqual(info['existing_surface_nonempty_source'], 'sql_only_not_recomputed_from_csv')
+            for name, text in report['csv'].items():
+                self.assertEqual((dest / name).read_text(), text)
+
     def test_remote_error_sanitization_cleanup_and_options(self):
         driver = types.ModuleType('psycopg2')
         config = {key:'literal' for key in a.CONNECTION_FIELDS}
