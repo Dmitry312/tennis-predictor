@@ -93,13 +93,44 @@ jobs:
               print(label + '=' + json.dumps(value, sort_keys=True), flush=True)
 
           def command(args):
+              import selectors
+              import signal
+              import time
+
+              p = None
               try:
-                  p = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                     timeout=8, check=False)
-                  if p.returncode == 0 and len(p.stdout) <= 262144:
-                      return p.stdout.decode('utf-8', errors='replace')
+                  deadline = time.monotonic() + 8
+                  p = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                       start_new_session=True)
+                  os.set_blocking(p.stdout.fileno(), False)
+                  output = bytearray()
+                  with selectors.DefaultSelector() as selector:
+                      selector.register(p.stdout, selectors.EVENT_READ)
+                      while True:
+                          remaining = deadline - time.monotonic()
+                          if remaining <= 0 or not selector.select(remaining):
+                              return None
+                          chunk = os.read(p.stdout.fileno(), min(65536, 262145 - len(output)))
+                          if not chunk:
+                              break
+                          if len(output) + len(chunk) > 262144:
+                              return None
+                          output.extend(chunk)
+                  if p.wait(timeout=max(0, deadline - time.monotonic())) == 0:
+                      return output.decode('utf-8', errors='replace')
               except (OSError, subprocess.TimeoutExpired):
                   pass
+              finally:
+                  if p is not None:
+                      # Kill the isolated process group, including lingering children,
+                      # on every path; reap the direct child and close the pipe.
+                      try:
+                          os.killpg(p.pid, signal.SIGKILL)
+                      except ProcessLookupError:
+                          pass
+                      p.wait()
+                      if p.stdout is not None:
+                          p.stdout.close()
               return None
 
           def read(path, limit=262144):
