@@ -204,6 +204,11 @@ class S3AuditTests(unittest.TestCase):
             result = a.prefix_stats(a.ReadOnlyS3(Client({'pbp/': [response]})), BUCKET, 'pbp/', NOW)
             self.assertEqual(result['reason'], 'response_invalid')
             self.assertEqual(result['objects_observed'], 0)
+        first, second = page('pbp/', True, 'continue'), page('pbp/')
+        first['Contents'][0]['Size'] = 2**63 - 1
+        result = a.prefix_stats(a.ReadOnlyS3(Client({'pbp/': [first, second]})), BUCKET, 'pbp/', NOW)
+        self.assertEqual(result['reason'], 'response_invalid')
+        self.assertEqual((result['objects_observed'], result['bytes_observed']), (1, 2**63 - 1))
         with self.assertRaises(a.AuditFailure):
             a.serialize({'test': 'x' * a.MAX_OUTPUT})
         self.assertEqual(a.code(a.AuditFailure([SECRET])), 'audit_failed')

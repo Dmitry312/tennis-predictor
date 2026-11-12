@@ -271,10 +271,12 @@ def prefix_stats(s3, bucket, prefix, now):
             next_token = response.get('NextContinuationToken') if truncated else None
             if truncated and (type(next_token) is not str or not 1 <= len(next_token) <= 4096 or next_token in seen):
                 raise AuditFailure('response_invalid')
-            report['pages'] += 1
-            report['objects_observed'] = count(report['objects_observed'] + len(content))
-            report['bytes_observed'] = count(report['bytes_observed'] + size)
-            report['objects_24h_observed'] += recent
+            # Validate cumulative counters before committing any part of a page.
+            objects = count(report['objects_observed'] + len(content))
+            total_bytes = count(report['bytes_observed'] + size)
+            total_recent = count(report['objects_24h_observed'] + recent)
+            report.update(pages=report['pages'] + 1, objects_observed=objects,
+                          bytes_observed=total_bytes, objects_24h_observed=total_recent)
             if page_latest is not None:
                 latest = page_latest if latest is None else max(latest, page_latest)
                 report['latest_modified_utc'] = latest.isoformat()
