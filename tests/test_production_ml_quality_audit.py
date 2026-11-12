@@ -3,7 +3,7 @@ import datetime as dt
 import importlib.util
 from pathlib import Path
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, mock_open
 
 P = Path(__file__).resolve().parents[1] / 'infra/audit/production_ml_quality_audit.py'
 spec = importlib.util.spec_from_file_location('ml_audit', P)
@@ -90,6 +90,15 @@ class QualityAuditTests(unittest.TestCase):
 
     def test_config_validation(self):
         with patch.object(a.Path,'read_bytes',return_value=b'POSTGRES_PORT=not-a-port\n'):
+            with self.assertRaises(a.AuditFailure): a.settings()
+
+    def test_no_placeholder_query(self):
+        self.assertIn('COUNT(*) FILTER', a.QUERIES['categories'])
+        self.assertNotIn('CASE WHEN %s = %s', a.QUERIES['categories'])
+
+    def test_malformed_quoted_config_rejected(self):
+        values = b'POSTGRES_HOST="unterminated\\n'
+        with patch.object(a.Path,'open',mock_open(read_data=values)):
             with self.assertRaises(a.AuditFailure): a.settings()
 
     def test_fixed_sql_allowlist(self):
