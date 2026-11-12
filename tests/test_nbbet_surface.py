@@ -47,3 +47,46 @@ def test_parse_match_page_surface(match_one, expected):
     html = '<script id="__NEXT_DATA__" type="application/json">' + json.dumps(state) + "</script>"
     result = parse_match_page(html, 123)
     assert result.surface == expected
+
+
+def test_process_one_keeps_surface_when_points_are_deferred(monkeypatch):
+    import threading
+    from datetime import UTC, datetime
+    from types import SimpleNamespace
+
+    from tennis_predictor.ingestion.nbbet import detail_job
+    from tennis_predictor.ingestion.nbbet.details import MatchDetails
+
+    match = SimpleNamespace(
+        nbbet_slug="sample-slug", nbbet_match_id=123,
+        match_id="sample-match", has_pbp=False, match_date=datetime.now(UTC).date(),
+    )
+    monkeypatch.setattr(detail_job, "_session", lambda guard: object())
+    monkeypatch.setattr(detail_job, "fetch_match_page", lambda session, slug: "html")
+    monkeypatch.setattr(detail_job, "parse_match_page", lambda html, mid: MatchDetails(
+        nbbet_match_id=mid, status=3, has_coverage=False, surface="hard",
+    ))
+    monkeypatch.setattr(detail_job, "fetch_points", lambda session, slug: None)
+    monkeypatch.setattr(detail_job.time, "sleep", lambda seconds: None)
+    result = detail_job.process_one(match, detail_job.ThrottleGuard(), {"pause": 0}, threading.Event())
+    assert result.kind == "retry_later"
+    assert result.surface == "hard"
+
+
+def test_process_one_keeps_surface_when_status_changed(monkeypatch):
+    import threading
+    from types import SimpleNamespace
+
+    from tennis_predictor.ingestion.nbbet import detail_job
+    from tennis_predictor.ingestion.nbbet.details import MatchDetails
+
+    match = SimpleNamespace(nbbet_slug="sample-slug", nbbet_match_id=123)
+    monkeypatch.setattr(detail_job, "_session", lambda guard: object())
+    monkeypatch.setattr(detail_job, "fetch_match_page", lambda session, slug: "html")
+    monkeypatch.setattr(detail_job, "parse_match_page", lambda html, mid: MatchDetails(
+        nbbet_match_id=mid, status=5, has_coverage=False, surface="clay",
+    ))
+    monkeypatch.setattr(detail_job.time, "sleep", lambda seconds: None)
+    result = detail_job.process_one(match, detail_job.ThrottleGuard(), {"pause": 0}, threading.Event())
+    assert result.kind == "status_changed"
+    assert result.surface == "clay"
