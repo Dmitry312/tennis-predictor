@@ -1,0 +1,52 @@
+name: ML quality audit offline tests
+
+on:
+  pull_request:
+    paths:
+      - 'infra/audit/production_ml_quality_audit.py'
+      - 'tests/test_production_ml_quality_audit.py'
+      - 'tests/test_ml_quality_postgres_integration.py'
+      - '.github/workflows/ml-quality-audit-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Compile standalone audit
+        run: python -m py_compile infra/audit/production_ml_quality_audit.py
+      - name: Run offline unit tests
+        run: python -m unittest discover -s tests -p 'test_production_ml_quality_audit.py' -v
+
+  postgres-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: ml_audit_test
+          POSTGRES_USER: ml_audit_test
+          POSTGRES_PASSWORD: test_only_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ml_audit_test -d ml_audit_test"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install PostgreSQL client
+        run: python -m pip install --disable-pip-version-check psycopg2-binary==2.9.10
+      - name: Run SQL integration tests against disposable PostgreSQL
+        env:
+          ML_AUDIT_TEST_HOST: 127.0.0.1
+        run: python -m unittest discover -s tests -p 'test_ml_quality_postgres_integration.py' -v
