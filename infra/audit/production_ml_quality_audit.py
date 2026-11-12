@@ -4,8 +4,7 @@ import json
 import sys
 import importlib.util
 
-# Reuse audited connection parser and session hardening from existing standalone audit.
-# The script is streamed from stdin: importlib is intentionally not used.
+# Standalone: the script is streamed from stdin and imports no application modules.
 import os
 import re
 from pathlib import Path
@@ -22,7 +21,7 @@ def settings():
     try:
         with Path('/root/Tennis_pelmen_model/.env').open('rb') as stream:
             raw = stream.read(65537)
-        if len(raw) > 65536 or b'\\x00' in raw:
+        if len(raw) > 65536 or bytes((0,)) in raw:
             raise AuditFailure('connection_config_unavailable')
         text = raw.decode('utf-8')
         found = {}
