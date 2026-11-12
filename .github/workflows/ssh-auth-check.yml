@@ -37,15 +37,39 @@ jobs:
             exit 1
           fi
 
-      - name: Authenticate and execute true only
-        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          fingerprint: ${{ secrets.SERVER_HOST_FINGERPRINT }}
-          port: 22
-          timeout: 15s
-          command_timeout: 15s
-          debug: false
-          script: "true"
+      - name: Verify ED25519 host key and execute true only
+        shell: bash
+        env:
+          SSH_HOST: ${{ secrets.SERVER_HOST }}
+          SSH_USER: ${{ secrets.SERVER_USER }}
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SSH_FINGERPRINT: ${{ secrets.SERVER_HOST_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          umask 077
+          ssh_dir=$(mktemp -d "$RUNNER_TEMP/ssh-auth.XXXXXX")
+          trap 'rm -rf -- "$ssh_dir"' EXIT
+          # Untrusted public key discovery only; no authentication or command.
+          timeout 15s ssh-keyscan -T 15 -p 22 -t ed25519 -- "$SSH_HOST" \
+            > "$ssh_dir/candidate" 2>/dev/null
+          # Require exactly one plain ED25519 key; never trust scan output alone.
+          awk 'NF == 3 && $2 == "ssh-ed25519" { print; count++ }
+               END { if (count != 1) exit 1 }' \
+            "$ssh_dir/candidate" > "$ssh_dir/known_hosts"
+          actual_fingerprint=$(ssh-keygen -lf "$ssh_dir/known_hosts" -E sha256 | awk '{print $2}')
+          if [[ "$actual_fingerprint" != "$SSH_FINGERPRINT" ]]; then
+            echo "::error::ED25519 host fingerprint mismatch"
+            exit 1
+          fi
+          printf '%s\n' "$SSH_KEY" > "$ssh_dir/key"
+          # Total SSH lifetime is capped at 15s, including connection and command.
+          timeout --kill-after=2s 15s ssh -F /dev/null -T -p 22 \
+            -o BatchMode=yes -o ConnectionAttempts=1 -o ConnectTimeout=15 \
+            -o HostKeyAlgorithms=ssh-ed25519 -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$ssh_dir/known_hosts" \
+            -o GlobalKnownHostsFile=/dev/null -o UpdateHostKeys=no \
+            -o VerifyHostKeyDNS=no -o IdentitiesOnly=yes -o IdentityAgent=none \
+            -o PreferredAuthentications=publickey -o PasswordAuthentication=no \
+            -o KbdInteractiveAuthentication=no -o ForwardAgent=no \
+            -o ClearAllForwardings=yes -i "$ssh_dir/key" \
+            -l "$SSH_USER" -- "$SSH_HOST" true
