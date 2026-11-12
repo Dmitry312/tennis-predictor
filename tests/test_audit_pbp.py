@@ -37,3 +37,9 @@ def test_missing_point_and_unresolved_winner():
 def test_empty():
     result = inspect_match(frame().iloc[:0])
     assert result["status"] == "missing"
+
+
+def test_null_point_index_is_reported_without_crashing():
+    result = inspect_match(frame(point_num=[1, None, 1, 2]))
+    assert result["status"] == "review"
+    assert "null_point_index" in result["issues"]
