@@ -44,4 +44,5 @@ PY
 [[ "$(git rev-parse --verify HEAD)" == "$TARGET_SHA" ]] || false
 trap - ERR
 echo "CUTOVER_OK: target=$TARGET_SHA previous=$EXPECTED_OLD_SHA"
-echo "Locks release on exit; monitor next cron cycle and roll back if ingestion regresses."
+echo "Locks release on exit. This script does NOT automatically roll back later ingestion regressions."
+echo "Mandatory: observe at least one 10-minute cycle and manually initiate rollback if metrics regress."
