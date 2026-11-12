@@ -94,6 +94,7 @@ class Outcome:
     raw_pbp: pd.DataFrame | None = None
     games_per_set: dict | None = None
     odds_open: tuple[float, float] | None = None
+    surface: str | None = None
     error: str | None = None
 
 
@@ -119,10 +120,11 @@ def process_one(r, guard: ThrottleGuard, state: dict, stop: threading.Event) -> 
             return Outcome(r, "failed", error="страница 404")
         d = parse_match_page(html, r.nbbet_match_id)
         if d.status not in FETCH_DETAILS:
-            return Outcome(r, "status_changed", status=d.status)
+            return Outcome(r, "status_changed", status=d.status, surface=d.surface)
         out = Outcome(r, "ok", status=d.status)
         out.detail_row, out.stat_rows, out.raw_row = details_to_rows(d, str(r.match_id))
         out.odds_open = d.odds_open
+        out.surface = d.surface
         if not r.has_pbp:
             sets = fetch_points(s, r.nbbet_slug)
             time.sleep(state["pause"])
@@ -132,7 +134,7 @@ def process_one(r, guard: ThrottleGuard, state: dict, stop: threading.Event) -> 
                     out.raw_pbp, out.games_per_set = raw, gps
             today = datetime.now(tz=UTC).date()
             if out.raw_pbp is None and (today - r.match_date).days <= RECENT_DAYS:
-                return Outcome(r, "retry_later")
+                return Outcome(r, "retry_later", surface=d.surface)
         return out
     except Exception as e:  # noqa: BLE001
         return Outcome(r, "failed", error=repr(e))
@@ -150,6 +152,7 @@ def flush(outcomes, run_id, batch_idx, s3, bucket, dry_run) -> None:
     ts = datetime.now(UTC).replace(tzinfo=None)
     ok = [o for o in outcomes if o.kind == "ok"]
     changed = [o for o in outcomes if o.kind == "status_changed"]
+    deferred_surface = [o for o in outcomes if o.kind in ("status_changed", "retry_later") and o.surface]
     only_details, with_pbp = [], []
 
     groups: dict[tuple, list[Outcome]] = {}
@@ -178,10 +181,10 @@ def flush(outcomes, run_id, batch_idx, s3, bucket, dry_run) -> None:
                 frame = build_parquet_frame(
                     o.raw_pbp, {r.nbbet_match_id: r.match_id}, gender, level, o.games_per_set)
             if frame.empty:
-                only_details.append(base)
+                only_details.append({**base, "b_surface": o.surface})
             else:
                 frames.append(frame)
-                with_pbp.append({**base, "b_path": pbp_key,
+                with_pbp.append({**base, "b_surface": o.surface, "b_path": pbp_key,
                                  "b_compl": completeness(frame, o.games_per_set, r.nbbet_match_id)})
         if frames:
             write_parquet_to_s3(pd.concat(frames, ignore_index=True), s3, bucket, pbp_key, dry_run)
@@ -193,16 +196,25 @@ def flush(outcomes, run_id, batch_idx, s3, bucket, dry_run) -> None:
         if only_details:
             conn.execute(base_stmt.values(status=bindparam("b_status"),
                                           details_fetched_at=bindparam("b_ts"),
-                                          details_version=bindparam("b_version")), only_details)
+                                          details_version=bindparam("b_version"),
+                                          surface=func.coalesce(Match.surface, bindparam("b_surface"))), only_details)
         if with_pbp:
             conn.execute(base_stmt.values(status=bindparam("b_status"),
                                           details_fetched_at=bindparam("b_ts"), has_pbp=True,
                                           pbp_s3_path=bindparam("b_path"),
                                           pbp_completeness=bindparam("b_compl"),
-                                          details_version=bindparam("b_version")), with_pbp)
+                                          details_version=bindparam("b_version"),
+                                          surface=func.coalesce(Match.surface, bindparam("b_surface"))), with_pbp)
         if changed:
             conn.execute(base_stmt.values(status=bindparam("b_status")),
                          [{"b_id": o.row.match_id, "b_status": o.status} for o in changed])
+        # Preserve extracted surface even if point-by-point is not ready or status changed.
+        # A known value is immutable here; unknown values never erase it.
+        if deferred_surface:
+            conn.execute(
+                base_stmt.values(surface=func.coalesce(Match.surface, bindparam("b_surface"))),
+                [{"b_id": o.row.match_id, "b_surface": o.surface} for o in deferred_surface],
+            )
         # Запасной путь: odds_open пишется из sweep (листинг, source=
         # 'listing'), detail_job дозаполняет её из match["30"] страницы
         # ТОЛЬКО если sweep не успел (odds_open_p1 ещё NULL) — тоже
