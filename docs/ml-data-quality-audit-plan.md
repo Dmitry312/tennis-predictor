@@ -51,3 +51,14 @@ Evaluate data quality for pre-match tennis prediction, not merely database/S3 up
 `public.matches` includes match_date, start_ts, player1/player2, gender, level, surface, status, duplicate_of, has_pbp, pbp_s3_path, pbp_completeness, odds_open_p1/p2, odds_open_captured_at/source/status. No winner/score column is declared in the current SQLAlchemy Match model. The PBP files may carry outcomes, but this must be verified before declaring training readiness.
 
 Last separate audits reported 199,068 matches and 3,586 distinct PBP paths; these are historical audit observations, not results of this proposed quality audit.
+
+## Implemented PR #11 scope and operational limits
+
+- Standalone SQL audit and manually dispatched SSH workflow; PostgreSQL read-only, repeatable-read, time-limited queries, no raw row identifiers in JSON.
+- CI: Python compilation, offline unit tests, and disposable PostgreSQL 16 integration tests (not a production query). CI status must be verified for the latest commit.
+- SQL reports aggregate counts, year-level coverage, missing/inconsistent metadata, and **conservative** odds timing checks. It does **not** certify any row as training-ready; winner labels, PBP content, feature provenance and candidate duplicates remain unverified.
+- `strict_prematch_odds_finished_canonical` is a preliminary count of records with paired odds observed before `start_ts` and finished status, **not** a count of labeled/eligible training examples.
+- `dangling_duplicate` requires a subquery against matches. The production query is capped by statement_timeout, but its plan has not been EXPLAINed on production. If it times out, treat the audit as failed/incomplete; never increase timeout automatically.
+- The SQL integration tests use a disposable PostgreSQL instance and synthetic rows. They do not establish production query performance or correctness of upstream data capture.
+- `status=3` is finished; `status=9` is finished-retired. The audit keeps them separate. Null and unknown statuses are not assumed finished.
+- Only manual workflow_dispatch on `main` can execute the production audit. No merge or dispatch is permitted without separate explicit authorization.
