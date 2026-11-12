@@ -1,0 +1,97 @@
+name: NB-Bet Python release preflight
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_commit:
+        description: "Expected production HEAD (40 lowercase hex chars); abort on mismatch"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nbbet-python-release-preflight
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require SSH configuration and pinned host fingerprint
+        shell: bash
+        env:
+          SSH_HOST: ${{ secrets.SERVER_HOST }}
+          SSH_USER: ${{ secrets.SERVER_USER }}
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SSH_FINGERPRINT: ${{ secrets.SERVER_HOST_FINGERPRINT }}
+          EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+        run: |
+          set -euo pipefail
+          [[ -n "$SSH_HOST" && -n "$SSH_USER" && -n "$SSH_KEY" ]] || { echo "::error::SSH secrets missing"; exit 1; }
+          [[ "$SSH_FINGERPRINT" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]] || { echo "::error::Invalid host fingerprint"; exit 1; }
+          [[ "$EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Invalid expected commit"; exit 1; }
+          [[ "$SSH_HOST" != *","* && "$SSH_HOST" != *[[:space:]]* ]] || exit 1
+
+      - name: Read-only server preflight
+        shell: bash
+        env:
+          SSH_HOST: ${{ secrets.SERVER_HOST }}
+          SSH_USER: ${{ secrets.SERVER_USER }}
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SSH_FINGERPRINT: ${{ secrets.SERVER_HOST_FINGERPRINT }}
+          EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+        run: |
+          set -euo pipefail
+          umask 077
+          d=$(mktemp -d "$RUNNER_TEMP/nbbet-ssh.XXXXXX")
+          trap 'rm -rf -- "$d"' EXIT
+          timeout 15s ssh-keyscan -T 15 -p 22 -t ed25519 -- "$SSH_HOST" > "$d/candidate" 2>/dev/null
+          awk 'NF == 3 && $2 == "ssh-ed25519" {print; n++} END {if (n != 1) exit 1}' "$d/candidate" > "$d/known_hosts"
+          actual=$(ssh-keygen -lf "$d/known_hosts" -E sha256 | awk '{print $2}')
+          [[ "$actual" == "$SSH_FINGERPRINT" ]] || { echo "::error::Host key mismatch"; exit 1; }
+          printf '%s\n' "$SSH_KEY" > "$d/key"
+          # Python runs isolated stdlib only. No project import, no DB, no S3, no writes.
+          timeout --kill-after=2s 65s ssh -F /dev/null -T -p 22 \
+            -o BatchMode=yes -o ConnectionAttempts=1 -o ConnectTimeout=15 \
+            -o HostKeyAlgorithms=ssh-ed25519 -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$d/known_hosts" -o GlobalKnownHostsFile=/dev/null \
+            -o UpdateHostKeys=no -o VerifyHostKeyDNS=no -o IdentitiesOnly=yes \
+            -o IdentityAgent=none -o PreferredAuthentications=publickey \
+            -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no \
+            -o ForwardAgent=no -o ClearAllForwardings=yes -i "$d/key" \
+            -l "$SSH_USER" -- "$SSH_HOST" \
+            "EXPECTED_COMMIT=$EXPECTED_COMMIT python3 -I -S -B -" <<'PY'
+          import os, pathlib, subprocess, sys
+          root = pathlib.Path('/root/Tennis_pelmen_model')
+          def check(name, ok):
+              print(name + '=' + ('PASS' if ok else 'FAIL'), flush=True)
+              if not ok:
+                  global failed
+                  failed = True
+          failed = False
+          check('project_dir', root.is_dir())
+          check('python_venv', (root / '.venv/bin/python').is_file())
+          check('detail_job_source', (root / 'src/tennis_predictor/ingestion/nbbet/detail_job.py').is_file())
+          if root.is_dir():
+              def git(*args):
+                  return subprocess.run(['git', '-C', str(root), '--no-optional-locks', *args],
+                                        capture_output=True, timeout=12, check=True).stdout.decode().strip()
+              try:
+                  head = git('rev-parse', '--verify', 'HEAD')
+                  check('expected_head', head == os.environ['EXPECTED_COMMIT'])
+                  check('clean_worktree', not git('status', '--porcelain', '--untracked-files=normal'))
+              except (OSError, subprocess.SubprocessError, UnicodeError):
+                  check('git_inspection', False)
+          else:
+              check('git_inspection', False)
+          try:
+              cron = subprocess.run(['crontab', '-l'], capture_output=True, timeout=8, check=True).stdout.decode()
+              check('detail_job_cron', cron.count('tennis_predictor.ingestion.nbbet.detail_job') >= 2)
+          except (OSError, subprocess.SubprocessError, UnicodeError):
+              check('detail_job_cron', False)
+          sys.exit(1 if failed else 0)
+          PY
