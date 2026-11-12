@@ -1,0 +1,243 @@
+name: Manual production inventory
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: production-inventory
+  cancel-in-progress: false
+
+jobs:
+  inventory:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Require SSH settings and trusted fingerprint
+        shell: bash
+        env:
+          SSH_HOST: ${{ secrets.SERVER_HOST }}
+          SSH_USER: ${{ secrets.SERVER_USER }}
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SSH_FINGERPRINT: ${{ secrets.SERVER_HOST_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$SSH_HOST" || -z "$SSH_USER" || -z "$SSH_KEY" ]]; then
+            echo "::error::Required SSH settings are missing"
+            exit 1
+          fi
+          if [[ ! "$SSH_FINGERPRINT" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]]; then
+            echo "::error::A trusted SHA256 host fingerprint is required"
+            exit 1
+          fi
+          if [[ "$SSH_HOST" == *","* || "$SSH_HOST" == *[[:space:]]* ]]; then
+            echo "::error::Exactly one SSH host is required"
+            exit 1
+          fi
+
+      - name: Verify ED25519 host key and read inventory
+        shell: bash
+        env:
+          SSH_HOST: ${{ secrets.SERVER_HOST }}
+          SSH_USER: ${{ secrets.SERVER_USER }}
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SSH_FINGERPRINT: ${{ secrets.SERVER_HOST_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          umask 077
+          ssh_dir=$(mktemp -d "$RUNNER_TEMP/ssh-auth.XXXXXX")
+          trap 'rm -rf -- "$ssh_dir"' EXIT
+          # Untrusted public key discovery only; no authentication or command.
+          timeout 15s ssh-keyscan -T 15 -p 22 -t ed25519 -- "$SSH_HOST" \
+            > "$ssh_dir/candidate" 2>/dev/null
+          # Require exactly one plain ED25519 key; never trust scan output alone.
+          awk 'NF == 3 && $2 == "ssh-ed25519" { print; count++ }
+               END { if (count != 1) exit 1 }' \
+            "$ssh_dir/candidate" > "$ssh_dir/known_hosts"
+          actual_fingerprint=$(ssh-keygen -lf "$ssh_dir/known_hosts" -E sha256 | awk '{print $2}')
+          if [[ "$actual_fingerprint" != "$SSH_FINGERPRINT" ]]; then
+            echo "::error::ED25519 host fingerprint mismatch"
+            exit 1
+          fi
+          printf '%s\n' "$SSH_KEY" > "$ssh_dir/key"
+          # Runner-only temporary files; remote Python is isolated, no project imports.
+          timeout --kill-after=2s 90s ssh -F /dev/null -T -p 22 \
+            -o BatchMode=yes -o ConnectionAttempts=1 -o ConnectTimeout=15 \
+            -o HostKeyAlgorithms=ssh-ed25519 -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$ssh_dir/known_hosts" \
+            -o GlobalKnownHostsFile=/dev/null -o UpdateHostKeys=no \
+            -o VerifyHostKeyDNS=no -o IdentitiesOnly=yes -o IdentityAgent=none \
+            -o PreferredAuthentications=publickey -o PasswordAuthentication=no \
+            -o KbdInteractiveAuthentication=no -o ForwardAgent=no \
+            -o ClearAllForwardings=yes -i "$ssh_dir/key" \
+            -l "$SSH_USER" -- "$SSH_HOST" \
+            'PYTHONDONTWRITEBYTECODE=1 python3 -I -S -B -' <<'INVENTORY_PY'
+          # Isolated stdlib only: never import project code or execute its interpreter.
+          import collections
+          import json
+          import os
+          import pathlib
+          import re
+          import shutil
+          import subprocess
+          import sys
+
+          ROOT = pathlib.Path('/root/Tennis_pelmen_model')  # Candidate, not an assumption.
+          MODULES = ('tennis_predictor.ingestion.nbbet.detail_job',
+                     'tennis_predictor.ingestion.nbbet.sweep',
+                     'tennis_predictor.ingestion.health')
+
+          def emit(label, value):
+              print(label + '=' + json.dumps(value, sort_keys=True), flush=True)
+
+          def command(args):
+              import selectors
+              import signal
+              import time
+
+              p = None
+              try:
+                  deadline = time.monotonic() + 8
+                  p = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                       start_new_session=True)
+                  os.set_blocking(p.stdout.fileno(), False)
+                  output = bytearray()
+                  with selectors.DefaultSelector() as selector:
+                      selector.register(p.stdout, selectors.EVENT_READ)
+                      while True:
+                          remaining = deadline - time.monotonic()
+                          if remaining <= 0 or not selector.select(remaining):
+                              return None
+                          chunk = os.read(p.stdout.fileno(), min(65536, 262145 - len(output)))
+                          if not chunk:
+                              break
+                          if len(output) + len(chunk) > 262144:
+                              return None
+                          output.extend(chunk)
+                  if p.wait(timeout=max(0, deadline - time.monotonic())) == 0:
+                      return output.decode('utf-8', errors='replace')
+              except (OSError, subprocess.TimeoutExpired):
+                  pass
+              finally:
+                  if p is not None:
+                      # Kill the isolated process group, including lingering children,
+                      # on every path; reap the direct child and close the pipe.
+                      try:
+                          os.killpg(p.pid, signal.SIGKILL)
+                      except ProcessLookupError:
+                          pass
+                      p.wait()
+                      if p.stdout is not None:
+                          p.stdout.close()
+              return None
+
+          def read(path, limit=262144):
+              try:
+                  with open(path, 'rb') as f:
+                      data = f.read(limit + 1)
+                  return data.decode('utf-8', errors='replace') if len(data) <= limit else None
+              except OSError:
+                  return None
+
+          emit('kernel', os.uname().release)
+          release = read('/etc/os-release') or ''
+          os_info = {}
+          for key in ('ID', 'VERSION_ID'):
+              match = re.search(r'^' + key + r'=["\']?([A-Za-z0-9._-]+)["\']?$', release, re.M)
+              os_info[key] = match.group(1) if match else 'UNKNOWN'
+          emit('os', os_info)
+          uptime = read('/proc/uptime')
+          emit('uptime_seconds', int(float(uptime.split()[0])) if uptime else 'UNKNOWN')
+          mem = read('/proc/meminfo') or ''
+          emit('memory_kib', {k: int(v) for k, v in re.findall(
+              r'^(MemTotal|MemAvailable|SwapTotal|SwapFree):\s+(\d+) kB$', mem, re.M)})
+          try:
+              disk = shutil.disk_usage('/')
+              emit('root_disk_bytes', dict(total=disk.total, used=disk.used, free=disk.free))
+          except OSError:
+              emit('root_disk_bytes', 'UNKNOWN')
+          emit('inventory_python', '.'.join(map(str, sys.version_info[:3])))
+          emit('project_directory_present', ROOT.is_dir())
+          emit('venv_directory_present', (ROOT / '.venv').is_dir())
+          emit('venv_python_present', (ROOT / '.venv/bin/python').is_file())
+          for relative in ('src/tennis_predictor/ingestion/nbbet/detail_job.py',
+                           'src/tennis_predictor/ingestion/nbbet/sweep.py',
+                           'src/tennis_predictor/ingestion/health.py',
+                           'src/tennis_predictor/pipeline/run_ingestion.py',
+                           'src/tennis_predictor/pipeline/run_features.py',
+                           'src/tennis_predictor/pipeline/run_inference.py'):
+              emit('script_present:' + relative, (ROOT / relative).is_file())
+          sha = command(['git', '--no-optional-locks', '-c', 'core.fsmonitor=false',
+                         '-C', str(ROOT), 'rev-parse', '--verify', 'HEAD']) if ROOT.is_dir() else None
+          emit('project_commit', sha.strip() if sha and re.fullmatch(r'[0-9a-f]{40,64}\s*', sha) else 'UNKNOWN')
+
+          # Never print image names, container names, commands, inspect data or logs.
+          docker = command(['docker', 'ps', '--all', '--format', '{{.Image}}\t{{.State}}'])
+          if docker is None:
+              emit('docker', 'UNKNOWN: unavailable, denied, failed or timed out')
+          else:
+              states = collections.Counter()
+              pg = collections.Counter()
+              for line in docker.splitlines():
+                  fields = line.split('\t')
+                  if len(fields) != 2:
+                      continue
+                  image, state = fields
+                  state = state if state in ('running', 'paused', 'exited', 'created', 'restarting', 'removing', 'dead') else 'other'
+                  states[state] += 1
+                  if re.fullmatch(r'(?:.*/)?postgres(?::[^/]+|@sha256:[0-9a-f]+)?', image):
+                      pg[state] += 1
+              emit('docker_container_states', dict(states))
+              emit('postgres_image_candidates_by_state', dict(pg))
+
+          # Crontabs are processed in memory only; no raw lines or environment values.
+          cron_sources = [('current_user', command(['crontab', '-l']))]
+          cron_sources.append(('system', read('/etc/crontab')))
+          try:
+              entries = sorted(pathlib.Path('/etc/cron.d').iterdir())
+              for entry in entries:
+                  if re.fullmatch(r'[A-Za-z0-9_-]+', entry.name) and entry.is_file():
+                      cron_sources.append(('cron_d', read(entry)))
+          except OSError:
+              cron_sources.append(('cron_d', None))
+          cron_count = 0
+          cron_unknown = 0
+          cron_matches = collections.Counter()
+          for _, content in cron_sources:
+              if content is None:
+                  cron_unknown += 1
+                  continue
+              for line in content.splitlines():
+                  line = line.strip()
+                  if not line or line.startswith('#') or re.match(r'^[A-Za-z_][A-Za-z0-9_]*\s*=', line):
+                      continue
+                  cron_count += 1
+                  for module in MODULES:
+                      if re.search(r'(?<![\w.])' + re.escape(module) + r'(?![\w.])', line):
+                          cron_matches[module] += 1
+          emit('cron_summary', dict(candidate_entries=cron_count, unreadable_sources=cron_unknown,
+                                    expected_module_mentions=dict(cron_matches)))
+
+          # Inspect argv only in memory to identify expected collectors; never output argv.
+          processes = collections.Counter()
+          process_unknown = 0
+          try:
+              for entry in pathlib.Path('/proc').iterdir():
+                  if not entry.name.isdigit():
+                      continue
+                  raw = read(entry / 'cmdline', 65536)
+                  if raw is None:
+                      process_unknown += 1
+                      continue
+                  args = raw.split('\0')
+                  for module in MODULES:
+                      script = module.replace('.', '/') + '.py'
+                      if any(args[i] == '-m' and args[i + 1] == module for i in range(len(args) - 1)) or any(a.endswith('/' + script) for a in args):
+                          processes[module] += 1
+          except OSError:
+              process_unknown += 1
+          emit('collector_process_signs', dict(matches=dict(processes), unreadable_or_raced=process_unknown))
+          emit('limitations', 'Candidate path only; current-user/system/cron.d only, not all users/timers; process races; custom PostgreSQL images not identified; no DB, application or backup checks')
+          INVENTORY_PY
