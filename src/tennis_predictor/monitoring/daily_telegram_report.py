@@ -72,7 +72,7 @@ def health_snapshot():
                          "nbbet-refresh", "health")
         ),
     ]
-    return "\\n".join(lines)
+    return "\n".join(lines)
 
 
 def make_report(day):
