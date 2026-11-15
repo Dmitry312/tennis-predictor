@@ -11,6 +11,7 @@ import pyarrow.parquet as pq
 import requests
 from sqlalchemy import text
 
+from tennis_predictor.ingestion import health
 from tennis_predictor.config import get_settings
 from tennis_predictor.storage.db import engine
 from tennis_predictor.storage.s3_client import get_s3_client
@@ -57,6 +58,39 @@ def stats_ids(target_ids, year):
     return found
 
 
+def health_snapshot():
+    """Reuse health.check() and the existing job-run query helper."""
+    problems = health.check()
+    now = health._now()
+    with engine.connect() as conn:
+        queue = conn.execute(text("""
+            SELECT COUNT(*) FROM matches
+            WHERE status IN (3, 9, 10) AND details_fetched_at IS NULL
+              AND details_attempts < 5 AND duplicate_of IS NULL
+              AND level IN ('tour', 'challenger')
+        """)).scalar()
+        errors = conn.execute(text("""
+            SELECT job_name, COUNT(*) FROM job_runs
+            WHERE started_at >= :cutoff AND status = 'error'
+            GROUP BY job_name ORDER BY job_name
+        """), {"cutoff": now - timedelta(hours=24)}).all()
+        jobs = [(name, health._last_run(conn, name, now=now))
+                for name in ("nbbet-sweep", "nbbet-sweep-wide",
+                             "nbbet-detail", "nbbet-refresh", "health")]
+    lines = [
+        "Health: " + ("OK" if not problems else f"{len(problems)} проблем"),
+        f"Очередь detail_job: {queue}",
+        "Ошибки за 24ч: " + (", ".join(f"{name}: {n}" for name, n in errors)
+                               if errors else "нет"),
+        "Джобы: " + "; ".join(
+            f"{name}={run.status if run else 'нет запусков'}"
+            for name, run in jobs
+        ),
+    ]
+    lines.extend(f"{p.job}/{p.kind}: {p.message}" for p in problems)
+    return "\n".join(lines)
+
+
 def make_report(day):
     rows = match_rows(day)
     ids = {r["id"] for r in rows}
@@ -79,7 +113,8 @@ def make_report(day):
         f"Покрытие: {surface}/{n} ({pct(surface)})\n"
         f"Без pBp: {n - pbp}; без деталей: {n - details}; "
         f"без статистики: {n - len(stats)}\n"
-        "ℹ️ Пропуски источника не приравниваются к ошибкам парсера."
+        "ℹ️ Пропуски источника не приравниваются к ошибкам парсера.\n\n"
+        + health_snapshot()
     )
 
 
