@@ -72,11 +72,11 @@ def decide(known: list[str], probes: list[str | None], required: int) -> tuple[s
 
 
 def preview(max_groups: int, probe: bool, pause: float) -> dict:
-    if max_groups < 1 or max_groups > 100:
-        raise ValueError("max_groups must be between 1 and 100")
+    if max_groups < 1 or max_groups > 20:
+        raise ValueError("max_groups must be between 1 and 20")
     if pause < 1:
         raise ValueError("pause must be >= 1 second")
-    session = make_session(headers=HEADERS, retry_statuses=(500, 502, 503, 504)) if probe else None
+    session = make_session(headers=HEADERS, retry_statuses=()) if probe else None
     results = []
     planned = []
     with engine.connect().execution_options(isolation_level="REPEATABLE READ") as conn:
@@ -114,7 +114,10 @@ def preview(max_groups: int, probe: bool, pause: float) -> dict:
             try:
                 html = fetch_match_page(session, c["nbbet_slug"])
                 found.append(parse_match_page(html, c["nbbet_match_id"]).surface if html else None)
-            except Exception:
+            except Exception as exc:
+                # Stop immediately on rate limiting / access blocks; do not continue probing.
+                if getattr(getattr(exc, "response", None), "status_code", None) in (403, 429):
+                    raise RuntimeError("NB-Bet rate limited or blocked the preview") from None
                 found.append(None)
             time.sleep(pause)
         status, surface = decide([], found, 2)
