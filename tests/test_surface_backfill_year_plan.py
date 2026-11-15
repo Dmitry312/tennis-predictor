@@ -2,7 +2,7 @@
 import pytest
 
 from tennis_predictor.ingestion.nbbet.surface_backfill_year_plan import (
-    plan, requires_tie_level,
+    plan, requires_tie_level, decide,
 )
 
 
@@ -25,3 +25,15 @@ def test_regular_tournaments_are_year_scoped_not_tie_scoped(name):
 def test_invalid_limits_fail_before_db(limit, pause):
     with pytest.raises(ValueError):
         plan(limit, False, pause)
+
+
+@pytest.mark.parametrize("known,probes,expected", [
+    (["hard"], [], ("known_consistent", "hard")),
+    ([], ["clay", "clay"], ("probed_consistent", "clay")),
+    ([], ["grass", None], ("insufficient_evidence", None)),
+    ([], ["hard", "clay"], ("conflict_probe", None)),
+    (["hard", "clay"], [], ("conflict_existing", None)),
+    ([], ["unknown", "hard"], ("invalid_probe", None)),
+])
+def test_remote_standalone_decision_policy(known, probes, expected):
+    assert decide(known, probes, 2) == expected

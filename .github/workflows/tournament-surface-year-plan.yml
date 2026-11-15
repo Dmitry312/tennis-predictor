@@ -81,7 +81,7 @@ jobs:
             -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no \
             -o ForwardAgent=no -o ClearAllForwardings=yes -i "$d/key" \
             -l "$SSH_USER" -- "$SSH_HOST" \
-            "cd /root/Tennis_pelmen_model && PYTHONPATH=/root/Tennis_pelmen_model/src /root/Tennis_pelmen_model/.venv/bin/python - $remote_args" \
+            "cd /root/Tennis_pelmen_model && PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/root/Tennis_pelmen_model/src /root/Tennis_pelmen_model/.venv/bin/python -B - $remote_args" \
             < src/tennis_predictor/ingestion/nbbet/surface_backfill_year_plan.py \
             > "$RUNNER_TEMP/surface-year-plan.json"
           python -m json.tool "$RUNNER_TEMP/surface-year-plan.json" > /dev/null
