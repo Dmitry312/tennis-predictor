@@ -2,7 +2,8 @@ name: Batch surface audit Tour Challenger (2016-2024, 2026)
 
 on:
   workflow_dispatch:
-\npermissions:
+
+permissions:
   contents: read
 
 concurrency:
