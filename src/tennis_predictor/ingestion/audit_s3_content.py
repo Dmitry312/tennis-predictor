@@ -14,10 +14,10 @@ from tennis_predictor.config import get_settings
 from tennis_predictor.storage.s3_client import get_s3_client
 
 KINDS = {
-    "nbbet_details": ["canonical_match_id", "nbbet_match_id", "status", "sets_json", "has_coverage", "fetched_at"],
-    "nbbet_stats": ["canonical_match_id", "scope", "fetched_at"],
+    "nbbet_details": ["canonical_match_id", "nbbet_match_id", "status", "sets_json", "has_coverage"],
+    "nbbet_stats": ["canonical_match_id", "scope"],
     "pbp": ["canonical_match_id", "set_num", "game_num", "point_num", "point_winner", "game_complete"],
-    "nbbet_raw": ["canonical_match_id", "nbbet_match_id", "fetched_at"],
+    "nbbet_raw": ["canonical_match_id", "nbbet_match_id"],
 }
 
 
@@ -138,7 +138,7 @@ def audit(s3, bucket, year, max_files, max_object_mb, max_issues):
         "limitations": [
             "No PostgreSQL or upstream source reconciliation",
             "Missing stats/pbp can be legitimate; do not classify as corruption automatically",
-            "Repeated versions across Parquet files are not deduplicated by fetched_at",
+            "Repeated versions across Parquet files are not deduplicated",
             "Point-level completeness cannot be inferred from contiguous indices",
             "Counts may be incomplete if objects were skipped or unreadable",
         ],
