@@ -17,8 +17,28 @@ from sqlalchemy import text
 from tennis_predictor.ingestion.http import make_session
 from tennis_predictor.ingestion.nbbet.details import fetch_match_page, parse_match_page
 from tennis_predictor.ingestion.nbbet.discovery import HEADERS
-from tennis_predictor.ingestion.nbbet.surface_backfill_preview import decide
 from tennis_predictor.storage.db import engine
+
+SURFACES = frozenset({"hard", "clay", "grass"})
+
+
+def decide(known: list[str], probes: list[str | None], required: int) -> tuple[str, str | None]:
+    """Use only valid, internally consistent evidence; keep remote script standalone."""
+    if any(value not in SURFACES for value in known):
+        return "invalid_existing", None
+    if len(set(known)) > 1:
+        return "conflict_existing", None
+    observations = [value for value in probes if value is not None]
+    if any(value not in SURFACES for value in observations):
+        return "invalid_probe", None
+    if len(set(known + observations)) > 1:
+        return "conflict_probe", None
+    if known:
+        return "known_consistent", known[0]
+    if len(observations) < required:
+        return "insufficient_evidence", None
+    return "probed_consistent", observations[0]
+
 
 GROUPS_SQL = text("""
 SELECT tournament_name, gender, level, EXTRACT(YEAR FROM match_date)::integer AS season,
