@@ -6,6 +6,7 @@ on:
       - 'infra/deploy/**'
       - 'tests/test_nbbet_cutover_offline.py'
       - '.github/workflows/nbbet-python-*.yml'
+      - '.github/workflows/nbbet-post-deploy-audit.yml'
       - 'infra/runbooks/nbbet-python-release.md'
   workflow_dispatch:
 
@@ -29,7 +30,7 @@ jobs:
           python - <<'PY'
           import pathlib
           import yaml
-          for path in pathlib.Path('.github/workflows').glob('nbbet-python-*.yml'):
+          for path in [*pathlib.Path('.github/workflows').glob('nbbet-python-*.yml'), pathlib.Path('.github/workflows/nbbet-post-deploy-audit.yml')]:
               with path.open() as f:
                   data = yaml.safe_load(f)
               assert isinstance(data, dict), path
