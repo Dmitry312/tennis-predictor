@@ -69,16 +69,16 @@ def make_report(day):
     def pct(x):
         return f"{x / n * 100:.1f}%" if n else "н/д"
     return (
-        f"🎾 Tennis Data Monitor\\n"
-        f"Дата: {day.isoformat()} (дата матча в PostgreSQL)\\n"
-        f"Tour / Challenger: {n}\\n"
-        f"Завершены / retired / awarded: {completed}\\n"
-        f"pBp: {pbp}/{n} ({pct(pbp)})\\n"
-        f"Детали: {details}/{n} ({pct(details)})\\n"
-        f"Статистика S3: {len(stats)}/{n} ({pct(len(stats))})\\n"
-        f"Покрытие: {surface}/{n} ({pct(surface)})\\n"
+        f"🎾 Tennis Data Monitor\n"
+        f"Дата: {day.isoformat()} (дата матча в PostgreSQL)\n"
+        f"Tour / Challenger: {n}\n"
+        f"Завершены / retired / awarded: {completed}\n"
+        f"pBp: {pbp}/{n} ({pct(pbp)})\n"
+        f"Детали: {details}/{n} ({pct(details)})\n"
+        f"Статистика S3: {len(stats)}/{n} ({pct(len(stats))})\n"
+        f"Покрытие: {surface}/{n} ({pct(surface)})\n"
         f"Без pBp: {n - pbp}; без деталей: {n - details}; "
-        f"без статистики: {n - len(stats)}\\n"
+        f"без статистики: {n - len(stats)}\n"
         "ℹ️ Пропуски источника не приравниваются к ошибкам парсера."
     )
 
