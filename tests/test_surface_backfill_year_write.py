@@ -25,7 +25,7 @@ def test_existing_surface_must_match_probes():
     assert eligible(0, None, 1, ["clay", "clay"]) is None
 
 
-@pytest.mark.parametrize("year,limit,pause", [(2000, 20, 3), (2025, 0, 3), (2025, 101, 3), (2025, 20, 1)])
-def test_invalid_args_fail_before_db(year, limit, pause):
+@pytest.mark.parametrize("year,pause", [(2000, 3), (2025, 1)])
+def test_invalid_args_fail_before_db(year, pause):
     with pytest.raises(ValueError):
-        run(year, limit, False, pause)
+        run(year, False, pause)
