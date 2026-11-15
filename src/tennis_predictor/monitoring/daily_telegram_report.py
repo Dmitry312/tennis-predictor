@@ -1,20 +1,15 @@
 """Read-only daily Telegram data coverage report for Tour and Challenger."""
 import argparse
-import io
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-import pyarrow.parquet as pq
 import requests
 from sqlalchemy import text
 
-from tennis_predictor.ingestion import health
-from tennis_predictor.config import get_settings
 from tennis_predictor.storage.db import engine
-from tennis_predictor.storage.s3_client import get_s3_client
 
 TZ = ZoneInfo("Europe/Moscow")
 LEVELS = ("tour", "challenger")
@@ -34,34 +29,9 @@ def match_rows(day):
         """), {"day": day}).mappings().all()
 
 
-def stats_ids(target_ids, year):
-    if not target_ids:
-        return set()
-    s3 = get_s3_client()
-    bucket = get_settings().s3_bucket
-    found = set()
-    paginator = s3.get_paginator("list_objects_v2")
-    for level in LEVELS:
-        for gender in ("M", "F"):
-            prefix = f"nbbet_stats/gender={gender}/level={level}/year={year}/"
-            for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
-                for obj in page.get("Contents", []):
-                    key = obj["Key"]
-                    if not key.endswith(".parquet"):
-                        continue
-                    raw = s3.get_object(Bucket=bucket, Key=key)["Body"].read()
-                    tab = pq.read_table(io.BytesIO(raw), columns=["canonical_match_id"])
-                    found.update(str(x) for x in tab.column(0).to_pylist()
-                                 if x is not None and str(x) in target_ids)
-                    if found == target_ids:
-                        return found
-    return found
-
-
 def health_snapshot():
-    """Reuse health.check() and the existing job-run query helper."""
-    problems = health.check()
-    now = health._now()
+    """Read previously recorded health and ingestion results; do not run checks."""
+    now = datetime.now(UTC).replace(tzinfo=None)
     with engine.connect() as conn:
         queue = conn.execute(text("""
             SELECT COUNT(*) FROM matches
@@ -74,27 +44,39 @@ def health_snapshot():
             WHERE started_at >= :cutoff AND status = 'error'
             GROUP BY job_name ORDER BY job_name
         """), {"cutoff": now - timedelta(hours=24)}).all()
-        jobs = [(name, health._last_run(conn, name, now=now))
-                for name in ("nbbet-sweep", "nbbet-sweep-wide",
-                             "nbbet-detail", "nbbet-refresh", "health")]
+        jobs = conn.execute(text("""
+            SELECT DISTINCT ON (job_name) job_name, status, heartbeat_at
+            FROM job_runs
+            WHERE job_name IN ('nbbet-sweep', 'nbbet-sweep-wide',
+                               'nbbet-detail', 'nbbet-refresh', 'health')
+            ORDER BY job_name, started_at DESC
+        """)).all()
+    by_job = {name: (status, heartbeat) for name, status, heartbeat in jobs}
+    health_row = by_job.get("health")
+    if health_row is None:
+        health_state = "нет запусков"
+    else:
+        status, heartbeat = health_row
+        age = (now - heartbeat).total_seconds() / 60 if heartbeat else None
+        health_state = f"{status}, {age:.0f} мин назад" if age is not None else status
+        if age is None or age > 30:
+            health_state += " (проверка устарела)"
     lines = [
-        "Health: " + ("OK" if not problems else f"{len(problems)} проблем"),
+        "Последняя health-проверка: " + health_state,
         f"Очередь detail_job: {queue}",
-        "Ошибки за 24ч: " + (", ".join(f"{name}: {n}" for name, n in errors)
-                               if errors else "нет"),
+        "Ошибки запусков за 24ч: " +
+        (", ".join(f"{name}: {n}" for name, n in errors) if errors else "нет"),
         "Джобы: " + "; ".join(
-            f"{name}={run.status if run else 'нет запусков'}"
-            for name, run in jobs
+            f"{name}={by_job[name][0]}" if name in by_job else f"{name}=нет запусков"
+            for name in ("nbbet-sweep", "nbbet-sweep-wide", "nbbet-detail",
+                         "nbbet-refresh", "health")
         ),
     ]
-    lines.extend(f"{p.job}/{p.kind}: {p.message}" for p in problems)
-    return "\n".join(lines)
+    return "\\n".join(lines)
 
 
 def make_report(day):
     rows = match_rows(day)
-    ids = {r["id"] for r in rows}
-    stats = stats_ids(ids, day.year)
     n = len(rows)
     pbp = sum(bool(r["has_pbp"]) for r in rows)
     details = sum(bool(r["has_details"]) for r in rows)
@@ -109,10 +91,10 @@ def make_report(day):
         f"Завершены / retired / awarded: {completed}\n"
         f"pBp: {pbp}/{n} ({pct(pbp)})\n"
         f"Детали: {details}/{n} ({pct(details)})\n"
-        f"Статистика S3: {len(stats)}/{n} ({pct(len(stats))})\n"
+        "Статистика: не проверяется (нет подтверждённого признака в PostgreSQL)\n"
         f"Покрытие: {surface}/{n} ({pct(surface)})\n"
         f"Без pBp: {n - pbp}; без деталей: {n - details}; "
-        f"без статистики: {n - len(stats)}\n"
+        f"без покрытия: {n - surface}\n"
         "ℹ️ Пропуски источника не приравниваются к ошибкам парсера.\n\n"
         + health_snapshot()
     )
