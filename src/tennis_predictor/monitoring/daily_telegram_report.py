@@ -64,7 +64,7 @@ def health_snapshot():
     lines = [
         "Последняя health-проверка: " + health_state,
         f"Очередь detail_job: {queue}",
-        "Ошибки запусков за 24ч: " +
+        "Неуспешные запуски за 24ч: " +
         (", ".join(f"{name}: {n}" for name, n in errors) if errors else "нет"),
         "Джобы: " + "; ".join(
             f"{name}={by_job[name][0]}" if name in by_job else f"{name}=нет запусков"
