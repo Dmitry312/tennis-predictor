@@ -1,0 +1,27 @@
+name: Year surface backfill checks
+
+on:
+  pull_request:
+    paths:
+      - 'src/tennis_predictor/ingestion/nbbet/surface_backfill_year_write.py'
+      - 'tests/test_surface_backfill_year_write.py'
+      - '.github/workflows/tournament-surface-year-write.yml'
+      - '.github/workflows/tournament-surface-year-write-checks.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -e . pytest
+      - run: python -m pytest -q tests/test_surface_backfill_year_write.py
+      - run: python -m py_compile src/tennis_predictor/ingestion/nbbet/surface_backfill_year_write.py
