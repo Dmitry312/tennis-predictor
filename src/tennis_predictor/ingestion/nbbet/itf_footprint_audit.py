@@ -5,7 +5,7 @@ from sqlalchemy import text
 from tennis_predictor.storage.db import engine
 
 SQL = text("""
-SELECT level, COUNT(*) AS matches,
+SELECT level, GROUPING(level) AS is_total, COUNT(*) AS matches,
  COUNT(*) FILTER (WHERE duplicate_of IS NULL) AS canonical_matches,
  COUNT(*) FILTER (WHERE has_pbp IS TRUE) AS has_pbp,
  COUNT(*) FILTER (WHERE details_fetched_at IS NOT NULL) AS details_fetched,
@@ -29,7 +29,7 @@ def main():
         conn.rollback()
     # ROLLUP creates a total with level NULL, even if actual NULL levels exist.
     # GROUPING(level) is required to distinguish those cases.
-    total = rows[-1]
+    total = next(r for r in rows if r["is_total"] == 1)
     itf = next((r for r in rows if r["level"] == "itf"), None)
     print(json.dumps({
         "audit_utc": datetime.now(UTC).isoformat(),
