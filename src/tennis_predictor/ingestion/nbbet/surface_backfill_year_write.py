@@ -28,6 +28,7 @@ SELECT tournament_name, gender, level,
  COUNT(*) FILTER (WHERE surface IS NOT NULL AND surface NOT IN ('hard','clay','grass')) AS invalid
 FROM public.matches
 WHERE duplicate_of IS NULL AND tournament_name IS NOT NULL
+ AND level IS DISTINCT FROM 'itf'
  AND match_date >= make_date(:year,1,1)
  AND match_date < make_date(:year + 1,1,1)
 GROUP BY tournament_name, gender, level
