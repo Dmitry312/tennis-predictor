@@ -2,7 +2,7 @@
 
 For each tournament/gender/level/year, use two distinct NB-Bet match pages.
 Never overwrite existing surfaces. Skip Davis Cup and contradictory groups.
-A bounded number of groups is processed per run to limit HTTP and DB load.
+Every eligible group in the selected year is visited in one run.
 """
 from __future__ import annotations
 
@@ -33,7 +33,6 @@ WHERE duplicate_of IS NULL AND tournament_name IS NOT NULL
 GROUP BY tournament_name, gender, level
 HAVING COUNT(*) FILTER (WHERE surface IS NULL) > 0
 ORDER BY missing DESC, tournament_name COLLATE "C", gender, level
-LIMIT :limit
 """)
 CANDIDATES_SQL = text("""
 SELECT nbbet_match_id, nbbet_slug FROM public.matches
@@ -81,14 +80,14 @@ def eligible(known_count: int, known: str | None, invalid: int, probes: list[str
     return probes[0]
 
 
-def run(year: int, limit: int, apply: bool, pause: float) -> dict:
-    if not 2010 <= year <= datetime.now(UTC).year or not 1 <= limit <= 100 or pause < 2:
-        raise ValueError("year must be 2010..current, limit 1..100, pause >= 2")
+def run(year: int, apply: bool, pause: float) -> dict:
+    if not 2010 <= year <= datetime.now(UTC).year or pause < 2:
+        raise ValueError("year must be 2010..current and pause >= 2")
     session = make_session(headers=HEADERS, retry_statuses=())
     report = []
     with engine.connect().execution_options(isolation_level="REPEATABLE READ") as conn:
         conn.execute(text("SET TRANSACTION READ ONLY"))
-        groups = conn.execute(GROUPS_SQL, {"year": year, "limit": limit}).mappings().all()
+        groups = conn.execute(GROUPS_SQL, {"year": year}).mappings().all()
         tasks = []
         for group in groups:
             params = dict(year=year, name=group["tournament_name"],
@@ -140,9 +139,12 @@ def run(year: int, limit: int, apply: bool, pause: float) -> dict:
                             row["updated"] = result.rowcount
                             row["status"] = "applied"
         report.append(row)
+        if len(report) % 25 == 0:
+            import sys
+            print(f"Processed {len(report)}/{len(tasks)} groups for {year}", file=sys.stderr, flush=True)
     return {
         "utc": datetime.now(UTC).isoformat(), "year": year, "apply": apply,
-        "groups_examined": len(report),
+        "groups_examined": len(report), "groups_total_in_year": len(tasks),
         "potential_matches": sum(r["missing_before"] for r in report if r.get("proposed_surface")),
         "matches_updated": sum(r["updated"] for r in report),
         "status_counts": dict(Counter(r["status"] for r in report)),
@@ -153,11 +155,10 @@ def run(year: int, limit: int, apply: bool, pause: float) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--year", type=int, required=True)
-    parser.add_argument("--max-groups", type=int, default=20)
     parser.add_argument("--pause", type=float, default=3)
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args()
-    print(json.dumps(run(args.year, args.max_groups, args.apply, args.pause),
+    print(json.dumps(run(args.year, args.apply, args.pause),
                      ensure_ascii=False, default=str))
 
 
