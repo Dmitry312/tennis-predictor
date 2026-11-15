@@ -83,6 +83,24 @@ def make_report(day):
     )
 
 
+def telegram_credentials(path="/root/Tennis_pelmen_model/.env.telegram"):
+    """Read only the two required values from the existing private config."""
+    values = {}
+    config = Path(path)
+    if config.is_file():
+        if config.stat().st_mode & 0o077:
+            raise RuntimeError("Telegram config permissions must be 0600")
+        for line in config.read_text(encoding="utf-8").splitlines():
+            if "=" not in line or line.lstrip().startswith("#"):
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            if key in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"):
+                values[key] = value.strip().strip('"').strip("'")
+    return (os.environ.get("TELEGRAM_BOT_TOKEN") or values.get("TELEGRAM_BOT_TOKEN"),
+            os.environ.get("TELEGRAM_CHAT_ID") or values.get("TELEGRAM_CHAT_ID"))
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--date", help="YYYY-MM-DD; default yesterday in Europe/Moscow")
@@ -96,8 +114,7 @@ def main():
     if args.dry_run:
         print(report)
         return
-    token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    token, chat_id = telegram_credentials()
     if not token or not chat_id:
         raise SystemExit("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID required")
     state_dir = Path(args.state_dir)
