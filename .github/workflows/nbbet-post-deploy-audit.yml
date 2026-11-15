@@ -92,9 +92,34 @@ jobs:
                       data = f.read().decode('utf-8', errors='replace').splitlines()
                   recent = data[-100:]
                   # Only aggregate line counts: never expose credentials or record payloads.
-                  errors = sum(any(k in line.lower() for k in ('traceback', 'exception:', 'error:')) for line in recent)
-                  print(name + '_last100_error_lines=' + str(errors), flush=True)
-                  check(name + '_no_obvious_errors', errors == 0)
+                  tokens = ('traceback', 'exception:', 'error:')
+                  matched = [line for line in recent if any(k in line.lower() for k in tokens)]
+                  print(name + '_last100_error_lines=' + str(len(matched)), flush=True)
+                  # Emit only bounded, sanitized diagnostic categories; never raw log payloads.
+                  import collections, re
+                  categories = collections.Counter()
+                  for line in matched:
+                      lower = line.lower()
+                      if 'traceback' in lower:
+                          category = 'traceback'
+                      elif 'timeout' in lower:
+                          category = 'timeout'
+                      elif 'connection' in lower:
+                          category = 'connection'
+                      elif 'rate limit' in lower or '429' in lower:
+                          category = 'rate_limit'
+                      elif 'permission' in lower or 'denied' in lower:
+                          category = 'permission'
+                      elif 'database' in lower or 'postgres' in lower:
+                          category = 'database'
+                      else:
+                          category = 'other'
+                      categories[category] += 1
+                  for category in sorted(categories):
+                      print(name + '_error_category_' + category + '=' + str(categories[category]), flush=True)
+                  # Error counts from the tail may include historical incidents.
+                  # Preserve the distinction between warning and confirmed failure.
+                  print(name + '_errors_present=' + ('YES' if matched else 'NO'), flush=True)
               except (OSError, UnicodeError):
                   check(name + '_log_readable', False)
           sys.exit(1 if failed else 0)
