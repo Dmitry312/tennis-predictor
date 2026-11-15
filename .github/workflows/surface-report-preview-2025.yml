@@ -1,0 +1,92 @@
+name: Preview 2025 Tour Challenger surface report (read-only)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: surface-report-preview-2025
+  cancel-in-progress: false
+
+jobs:
+  preview:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          sparse-checkout: src/tennis_predictor/ingestion/nbbet/surface_report_preview.py
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: tournament-surface-year-write-43711708694
+          run-id: 43711708694
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/original-report
+      - name: Package report and script
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import pathlib, zipfile, os
+          root = pathlib.Path(os.environ["RUNNER_TEMP"])
+          with zipfile.ZipFile(root / "preview-input.zip", "w", compression=zipfile.ZIP_DEFLATED) as z:
+              z.write("src/tennis_predictor/ingestion/nbbet/surface_report_preview.py", "preview.py")
+              z.write(root / "original-report/surface-year-write.json", "report.json")
+          PY
+      - name: Verify SSH configuration
+        shell: bash
+        env:
+          SSH_HOST: ${{ secrets.SERVER_HOST }}
+          SSH_USER: ${{ secrets.SERVER_USER }}
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SSH_FINGERPRINT: ${{ secrets.SERVER_HOST_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          [[ -n "$SSH_HOST" && -n "$SSH_USER" && -n "$SSH_KEY" ]] || exit 1
+          [[ "$SSH_FINGERPRINT" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]] || exit 1
+          [[ "$SSH_HOST" != *","* && "$SSH_HOST" != *[[:space:]]* ]] || exit 1
+      - name: Revalidate 2025 surface report over pinned SSH
+        shell: bash
+        env:
+          SSH_HOST: ${{ secrets.SERVER_HOST }}
+          SSH_USER: ${{ secrets.SERVER_USER }}
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SSH_FINGERPRINT: ${{ secrets.SERVER_HOST_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          umask 077
+          d=$(mktemp -d "$RUNNER_TEMP/preview-ssh.XXXXXX")
+          trap 'rm -rf -- "$d"' EXIT
+          timeout 15s ssh-keyscan -T 15 -p 22 -t ed25519 -- "$SSH_HOST" > "$d/candidate" 2>/dev/null
+          awk 'NF == 3 && $2 == "ssh-ed25519" {print; n++} END {if (n != 1) exit 1}' "$d/candidate" > "$d/known_hosts"
+          actual=$(ssh-keygen -lf "$d/known_hosts" -E sha256 | awk '{print $2}')
+          [[ "$actual" == "$SSH_FINGERPRINT" ]] || { echo "::error::SSH host key mismatch"; exit 1; }
+          printf '%s\n' "$SSH_KEY" > "$d/key"
+          # The script comes from the selected main commit, not the deployed checkout.
+          # Project imports resolve from the installed production source tree.
+          timeout --kill-after=5s 240s ssh -F /dev/null -T -p 22 \
+            -o BatchMode=yes -o ConnectionAttempts=1 -o ConnectTimeout=15 \
+            -o HostKeyAlgorithms=ssh-ed25519 -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$d/known_hosts" -o GlobalKnownHostsFile=/dev/null \
+            -o UpdateHostKeys=no -o VerifyHostKeyDNS=no -o IdentitiesOnly=yes \
+            -o IdentityAgent=none -o PreferredAuthentications=publickey \
+            -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no \
+            -o ForwardAgent=no -o ClearAllForwardings=yes -i "$d/key" \
+            -l "$SSH_USER" -- "$SSH_HOST" \
+            "cd /root/Tennis_pelmen_model && PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/root/Tennis_pelmen_model/src /root/Tennis_pelmen_model/.venv/bin/python -B -c 'import io,sys,zipfile; z=zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())); REPORT_BYTES=z.read(chr(114)+chr(101)+chr(112)+chr(111)+chr(114)+chr(116)+chr(46)+chr(106)+chr(115)+chr(111)+chr(110)); exec(compile(z.read(chr(112)+chr(114)+chr(101)+chr(118)+chr(105)+chr(101)+chr(119)+chr(46)+chr(112)+chr(121)),chr(112)+chr(114)+chr(101)+chr(118)+chr(105)+chr(101)+chr(119)+chr(46)+chr(112)+chr(121),chr(101)+chr(120)+chr(101)+chr(99)))'" \
+            < "$RUNNER_TEMP/preview-input.zip" \
+            > "$RUNNER_TEMP/surface-report-preview.json"
+          python -m json.tool "$RUNNER_TEMP/surface-report-preview.json" > /dev/null
+          # Report stays in artifact, not in workflow logs.
+          echo "Surface report preview completed. Download the report artifact."
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: surface-report-preview-${{ github.run_id }}
+          path: ${{ runner.temp }}/surface-report-preview.json
+          retention-days: 7
+          if-no-files-found: error
