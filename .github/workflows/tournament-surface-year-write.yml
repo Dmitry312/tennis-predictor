@@ -14,7 +14,7 @@ on:
         type: boolean
         default: false
       max_groups:
-        description: 'Number of tournament groups (1-20)'
+        description: 'Maximum tournament groups per run (5-100)'
         required: true
         type: choice
         options: ['5', '10', '20', '50', '100']
@@ -31,7 +31,7 @@ jobs:
   preview:
     if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -53,7 +53,7 @@ jobs:
           [[ "$SSH_HOST" != *","* && "$SSH_HOST" != *[[:space:]]* ]] || exit 1
           [[ "$GROUPS" == 5 || "$GROUPS" == 10 || "$GROUPS" == 20 || "$GROUPS" == 50 || "$GROUPS" == 100 ]] || exit 1
           [[ "$YEAR" =~ ^20(1[0-9]|2[0-6])$ ]] || exit 1
-      - name: Stream preview over pinned SSH (no server files written)
+      - name: Stream bounded backfill over pinned SSH
         shell: bash
         env:
           SSH_HOST: ${{ secrets.SERVER_HOST }}
@@ -62,6 +62,7 @@ jobs:
           SSH_FINGERPRINT: ${{ secrets.SERVER_HOST_FINGERPRINT }}
           GROUPS: ${{ inputs.max_groups }}
           APPLY: ${{ inputs.apply }}
+          YEAR: ${{ inputs.year }}
         run: |
           set -euo pipefail
           umask 077
@@ -78,7 +79,7 @@ jobs:
           fi
           # The script comes from the selected main commit, not the deployed checkout.
           # Project imports resolve from the installed production source tree.
-          timeout --kill-after=5s 390s ssh -F /dev/null -T -p 22 \
+          timeout --kill-after=5s 1740s ssh -F /dev/null -T -p 22 \
             -o BatchMode=yes -o ConnectionAttempts=1 -o ConnectTimeout=15 \
             -o HostKeyAlgorithms=ssh-ed25519 -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$d/known_hosts" -o GlobalKnownHostsFile=/dev/null \
