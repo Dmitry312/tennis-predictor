@@ -78,6 +78,7 @@ def preview(max_groups: int, probe: bool, pause: float) -> dict:
         raise ValueError("pause must be >= 1 second")
     session = make_session(headers=HEADERS, retry_statuses=(500, 502, 503, 504)) if probe else None
     results = []
+    planned = []
     with engine.connect().execution_options(isolation_level="REPEATABLE READ") as conn:
         conn.execute(text("SET TRANSACTION READ ONLY"))
         groups = conn.execute(GROUPS_SQL).mappings().all()
@@ -97,15 +98,8 @@ def preview(max_groups: int, probe: bool, pause: float) -> dict:
                 candidates = conn.execute(CANDIDATES_SQL, {
                     "name": g["tournament_name"], "gender": g["gender"], "level": g["level"]
                 }).mappings().all()
-                found = []
-                for c in candidates:
-                    try:
-                        html = fetch_match_page(session, c["nbbet_slug"])
-                        found.append(parse_match_page(html, c["nbbet_match_id"]).surface if html else None)
-                    except Exception:
-                        found.append(None)
-                    time.sleep(pause)
-                status, surface = decide([], found, 2)
+                planned.append((len(results), list(candidates)))
+                status, surface = "needs_probe", None
             results.append({
                 "tournament_name": g["tournament_name"],
                 "gender": g["gender"], "level": g["level"],
@@ -113,6 +107,19 @@ def preview(max_groups: int, probe: bool, pause: float) -> dict:
                 "status": status, "proposed_surface": surface,
             })
         conn.rollback()
+    # Release the database snapshot before any potentially slow external HTTP calls.
+    for index, candidates in planned:
+        found = []
+        for c in candidates:
+            try:
+                html = fetch_match_page(session, c["nbbet_slug"])
+                found.append(parse_match_page(html, c["nbbet_match_id"]).surface if html else None)
+            except Exception:
+                found.append(None)
+            time.sleep(pause)
+        status, surface = decide([], found, 2)
+        results[index]["status"] = status
+        results[index]["proposed_surface"] = surface
     return {
         "audit_utc": datetime.now(UTC).isoformat(),
         "mode": "live_probe_read_only" if probe else "db_only_read_only",
