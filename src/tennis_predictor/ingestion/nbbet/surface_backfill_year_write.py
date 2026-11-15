@@ -29,7 +29,7 @@ SELECT tournament_name, gender, level,
 FROM public.matches
 WHERE duplicate_of IS NULL AND tournament_name IS NOT NULL
  AND match_date >= make_date(:year,1,1)
- AND match_date < make_date(:year+1,1,1)
+ AND match_date < make_date(:year + 1,1,1)
 GROUP BY tournament_name, gender, level
 HAVING COUNT(*) FILTER (WHERE surface IS NULL) > 0
 ORDER BY missing DESC, tournament_name COLLATE "C", gender, level
@@ -54,7 +54,7 @@ WHERE duplicate_of IS NULL AND surface IS NULL
  AND match_date < make_date(:year+1,1,1)
 """)
 VERIFY_SQL = text("""
-SELECT COUNT(*) AS missing,
+SELECT COUNT(*) FILTER (WHERE surface IS NULL) AS missing,
  COUNT(DISTINCT surface) FILTER (WHERE surface IS NOT NULL) AS known_count,
  MIN(surface) FILTER (WHERE surface IS NOT NULL) AS known,
  COUNT(*) FILTER (WHERE surface IS NOT NULL AND surface NOT IN ('hard','clay','grass')) AS invalid
@@ -129,8 +129,10 @@ def run(year: int, limit: int, apply: bool, pause: float) -> dict:
                     # SERIALIZABLE is intentionally avoided; row locks + revalidation
                     # prevent overwriting non-NULL values even with active collectors.
                     with engine.begin() as write_conn:
+                        write_conn.execute(text("SET LOCAL lock_timeout = '5s'"))
+                        write_conn.execute(text("SET LOCAL statement_timeout = '30s'"))
                         current = write_conn.execute(VERIFY_SQL, params).mappings().one()
-                        if (current["invalid"] or current["known_count"] > 1
+                        if (current["missing"] != group["missing"] or current["invalid"] or current["known_count"] > 1
                                 or (current["known_count"] == 1 and current["known"] != surface)):
                             row["status"] = "skipped_changed_evidence"
                         else:
