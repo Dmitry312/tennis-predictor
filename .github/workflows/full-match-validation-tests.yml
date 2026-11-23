@@ -1,0 +1,32 @@
+name: Full match validation offline tests
+
+on:
+  pull_request:
+    paths:
+      - 'infra/audit/match_score_validation.py'
+      - 'infra/audit/full_match_export.py'
+      - 'infra/audit/production_full_match_sample.py'
+      - '.github/workflows/production-full-match-sample.yml'
+      - 'tests/test_match_score_validation.py'
+      - 'tests/test_full_match_export.py'
+      - 'tests/test_full_match_workflow.py'
+      - '.github/workflows/full-match-validation-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install pytest
+        run: python -m pip install --disable-pip-version-check pytest==8.3.5 PyYAML==6.0.2
+      - name: Compile validation module
+        run: python -m py_compile infra/audit/match_score_validation.py infra/audit/full_match_export.py infra/audit/production_full_match_sample.py
+      - name: Test score validation
+        run: python -m pytest -q tests/test_match_score_validation.py tests/test_full_match_export.py tests/test_full_match_workflow.py
