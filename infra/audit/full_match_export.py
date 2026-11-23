@@ -194,7 +194,7 @@ def select_pg_candidates(connection, *, limit=MAX_MATCHES):
             cursor.execute(
                 "SELECT match_id::text, pbp_s3_path FROM public.matches "
                 "WHERE duplicate_of IS NULL AND pbp_s3_path IS NOT NULL "
-                "AND pbp_s3_path LIKE 'pbp/%' "
+                "AND pbp_s3_path LIKE 'pbp/%%' "
                 "ORDER BY match_date DESC NULLS LAST, match_id LIMIT %s", (limit * 4,)
             )
             rows = cursor.fetchall()
