@@ -19,12 +19,12 @@ privacy boundary: `infra/audit/parquet_row_review.py`.
 
 ## Bounded sampling
 
-At most 200 lexicographically first listed keys per prefix; up to 3 small
-objects (<=256 KiB each) per prefix, <=12 first rows/object, <=24 distinct
-match IDs for one bounded PostgreSQL SELECT, <=30 S3 SDK calls, <=8 MiB
+At most 200 lexicographically first listed keys per prefix; up to 6 candidate small
+objects (<=256 KiB each) per prefix, <=6 first rows/object, <=24 distinct
+match IDs for one bounded PostgreSQL SELECT, <=45 S3 SDK calls, <=8 MiB
 accounted GET bytes, <=24,000 bytes output, <=65 seconds internal deadline.
-Objects larger than 256 KiB are skipped. Samples are **not representative**,
-and this version does **not** guarantee sampling every schema fingerprint.
+Objects larger than 256 KiB are skipped. Among sampled candidates, at most one file per distinct Arrow schema fingerprint is retained; at most six candidates per prefix are inspected. This does not guarantee finding all schema variants. Samples are **not representative**,
+and the bounded candidate pool does **not** guarantee finding every schema fingerprint.
 A successful run means the limited diagnostic succeeded, not that the
 whole bucket or every schema was inspected.
 
