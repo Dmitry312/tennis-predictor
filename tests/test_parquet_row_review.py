@@ -79,7 +79,7 @@ def test_bad_scores_and_non_integral_rank_are_null():
     }) == {"score_server": None, "score_returner": "AD", "point_winner": None}
     assert review.sanitize_row("nbbet_details/", {
         "p1_rank": 12.5, "sets_json": "not-json",
-    }) == {"p1_rank": None, "sets_structure": None}
+    }) == {"p1_rank": None, "sets_structure": None, "sets_anonymous_shape": None}
 
 
 def test_sets_numeric_fields_only_no_names_or_odds():
