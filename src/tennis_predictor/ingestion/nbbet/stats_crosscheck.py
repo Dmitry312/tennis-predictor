@@ -144,7 +144,8 @@ def reconcile(*, day, lookback, apply, max_matches, pause, deadline):
     for m in candidates:
         groups[(m.gender, m.level, m.match_date.year)].append(m)
     summary = dict(candidates=len(candidates), checked=0, unchanged=0,
-                   changed=0, missing_stats=0, failures=0, fields_changed=0, written=0)\n    detailed_changes = []
+                   changed=0, missing_stats=0, failures=0, fields_changed=0, written=0)
+    detailed_changes = []
     pending = []
     consecutive_failures = 0
     for (gender, level, year), matches in sorted(groups.items()):
