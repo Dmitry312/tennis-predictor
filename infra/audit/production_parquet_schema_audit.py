@@ -459,23 +459,63 @@ def audit(reader):
 
 
 def encode(report):
-    raw = json.dumps(report, ensure_ascii=True, separators=(",", ":"), allow_nan=False)
-    if len(raw.encode()) > MAX_OUTPUT:
-        # Fail closed, without accidentally marking omitted prefixes complete.
-        raw = json.dumps(
-            {
-                "version": 1,
-                "complete": False,
-                "error": "budget_exhausted",
-                "reason": "output_limit",
-                "semantic_verification": "pending",
-                "prefixes": [
-                    {"prefix": p, "complete": False, "observed_counts_are_lower_bounds": True}
-                    for p in PREFIXES
-                ],
-            }
-        )
-    return raw
+    """Fit bounded schema evidence without discarding the audit's aggregate results."""
+    import copy
+
+    def dump(value):
+        return json.dumps(value, ensure_ascii=True, separators=(",", ":"), allow_nan=False)
+
+    raw = dump(report)
+    if len(raw.encode()) <= MAX_OUTPUT:
+        return raw
+
+    compact = copy.deepcopy(report)
+    # Identical schemas are repeated across samples. Retain a representative
+    # column layout per fingerprint and preserve every sample's row metadata.
+    for item in compact.get("prefixes", []):
+        seen = set()
+        for sample in item.get("samples", []):
+            fp = sample.get("fingerprint")
+            if fp in seen:
+                sample.pop("columns", None)
+                sample["columns_omitted"] = "duplicate_schema"
+            else:
+                seen.add(fp)
+    raw = dump(compact)
+    if len(raw.encode()) <= MAX_OUTPUT:
+        return raw
+
+    # When distinct schemas still exceed the output cap, retain aggregate
+    # counts and fingerprint frequencies but explicitly flag missing layouts.
+    for item in compact.get("prefixes", []):
+        for sample in item.get("samples", []):
+            if "columns" in sample:
+                sample.pop("columns")
+                sample["columns_omitted"] = "output_limit"
+    raw = dump(compact)
+    if len(raw.encode()) <= MAX_OUTPUT:
+        return raw
+
+    # Last resort: no schema samples, but retain the bounded observations.
+    for item in compact.get("prefixes", []):
+        item.pop("samples", None)
+        item["samples_omitted"] = "output_limit"
+    raw = dump(compact)
+    if len(raw.encode()) <= MAX_OUTPUT:
+        return raw
+
+    # Fail closed if even aggregate metadata cannot be represented safely.
+    return dump({
+        "version": 1,
+        "complete": False,
+        "error": "budget_exhausted",
+        "reason": "output_limit",
+        "semantic_verification": "pending",
+        "prefixes": [
+            {"prefix": p, "complete": False, "observed_counts_are_lower_bounds": True}
+            for p in PREFIXES
+        ],
+    })
 
 
 def main():
