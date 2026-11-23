@@ -172,7 +172,14 @@ def reconcile(*, day, lookback, apply, max_matches, pause, deadline):
                 if differences:
                     summary["changed"] += 1
                     summary["fields_changed"] += len(differences)
-                    log.info("stats_changed match=%s fields=%d", mid, len(differences))\n                    detailed_changes.append({"canonical_match_id": mid,\n                                             "nbbet_match_id": m.nbbet_match_id,\n                                             "match_date": str(m.match_date),\n                                             "gender": m.gender, "level": m.level,\n                                             "changes": [{"scope": scope, "field": field,\n                                                          "before": before, "after": after}\n                                                         for scope, field, before, after in differences]})
+                    log.info("stats_changed match=%s fields=%d", mid, len(differences))
+                    detailed_changes.append({"canonical_match_id": mid,
+                                             "nbbet_match_id": m.nbbet_match_id,
+                                             "match_date": str(m.match_date),
+                                             "gender": m.gender, "level": m.level,
+                                             "changes": [{"scope": scope, "field": field,
+                                                          "before": before, "after": after}
+                                                         for scope, field, before, after in differences]})
                     corrections.extend(fresh)
                     raw_corrections.append({"canonical_match_id": mid,
                                             "nbbet_match_id": m.nbbet_match_id,
