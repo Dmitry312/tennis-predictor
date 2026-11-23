@@ -1,0 +1,141 @@
+name: Manual NBBet raw stats audit (768325)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-nbbet-raw-stat-audit
+  cancel-in-progress: false
+
+jobs:
+  full-match-sample:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read audited script from selected main commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          sparse-checkout: infra/audit
+
+      - name: Require SSH settings and trusted fingerprint
+        shell: bash
+        env:
+          SSH_HOST: ${{ secrets.SERVER_HOST }}
+          SSH_USER: ${{ secrets.SERVER_USER }}
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SSH_FINGERPRINT: ${{ secrets.SERVER_HOST_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$SSH_HOST" || -z "$SSH_USER" || -z "$SSH_KEY" ]]; then
+            echo "::error::Required SSH settings are missing"
+            exit 1
+          fi
+          if [[ ! "$SSH_FINGERPRINT" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]]; then
+            echo "::error::A trusted SHA256 host fingerprint is required"
+            exit 1
+          fi
+          if [[ ! "$SSH_HOST" =~ ^[A-Za-z0-9][A-Za-z0-9.-]*$ || ! "$SSH_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
+            echo "::error::Exactly one SSH host is required"
+            exit 1
+          fi
+
+      - name: Verify ED25519 host key and export read-only match sample
+        shell: bash
+        env:
+          SSH_HOST: ${{ secrets.SERVER_HOST }}
+          SSH_USER: ${{ secrets.SERVER_USER }}
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SSH_FINGERPRINT: ${{ secrets.SERVER_HOST_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          umask 077
+          ssh_dir=$(mktemp -d "$RUNNER_TEMP/ssh-auth.XXXXXX")
+          trap 'rm -rf -- "$ssh_dir"' EXIT
+          # Untrusted public key discovery only; no authentication or command.
+          timeout 15s ssh-keyscan -T 15 -p 22 -t ed25519 -- "$SSH_HOST" \
+            > "$ssh_dir/candidate" 2>/dev/null
+          # Require exactly one plain ED25519 key; never trust scan output alone.
+          awk 'NF == 3 && $2 == "ssh-ed25519" { print; count++ }
+               END { if (count != 1) exit 1 }' \
+            "$ssh_dir/candidate" > "$ssh_dir/known_hosts"
+          actual_fingerprint=$(ssh-keygen -lf "$ssh_dir/known_hosts" -E sha256 2>/dev/null | awk '{print $2}')
+          if [[ "$actual_fingerprint" != "$SSH_FINGERPRINT" ]]; then
+            echo "::error::ED25519 host fingerprint mismatch"
+            exit 1
+          fi
+          printf '%s\n' "$SSH_KEY" > "$ssh_dir/key"
+          # No server files are created; script is streamed over stdin.
+          artifact_dir=$(mktemp -d "$RUNNER_TEMP/match-sample.XXXXXX")
+          echo "ARTIFACT_DIR=$artifact_dir" >> "$GITHUB_ENV"
+          # Probe SSH independently; do not reveal remote stderr or secrets.
+          if timeout --kill-after=2s 25s ssh -F /dev/null -T -p 22 \
+            -o BatchMode=yes -o ConnectionAttempts=1 -o ConnectTimeout=15 \
+            -o HostKeyAlgorithms=ssh-ed25519 -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$ssh_dir/known_hosts" \
+            -o GlobalKnownHostsFile=/dev/null -o UpdateHostKeys=no \
+            -o VerifyHostKeyDNS=no -o IdentitiesOnly=yes -o IdentityAgent=none \
+            -o PreferredAuthentications=publickey -o PasswordAuthentication=no \
+            -o KbdInteractiveAuthentication=no -o ForwardAgent=no \
+            -o ClearAllForwardings=yes -i "$ssh_dir/key" \
+            -l "$SSH_USER" -- "$SSH_HOST" \
+            'true' \
+            >/dev/null 2>/dev/null; then
+            echo "SSH authentication succeeded"
+          else
+            echo "::error::ssh_connection_or_authentication_failed"
+            exit 1
+          fi
+          if timeout --kill-after=2s 125s ssh -F /dev/null -T -p 22 \
+            -o BatchMode=yes -o ConnectionAttempts=1 -o ConnectTimeout=15 \
+            -o HostKeyAlgorithms=ssh-ed25519 -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$ssh_dir/known_hosts" \
+            -o GlobalKnownHostsFile=/dev/null -o UpdateHostKeys=no \
+            -o VerifyHostKeyDNS=no -o IdentitiesOnly=yes -o IdentityAgent=none \
+            -o PreferredAuthentications=publickey -o PasswordAuthentication=no \
+            -o KbdInteractiveAuthentication=no -o ForwardAgent=no \
+            -o ClearAllForwardings=yes -i "$ssh_dir/key" \
+            -l "$SSH_USER" -- "$SSH_HOST" \
+            'timeout --kill-after=2s 110s /root/Tennis_pelmen_model/.venv/bin/python -I -B -' \
+            < <(cat infra/audit/production_raw_stat_probe.py) \
+            > "$artifact_dir/raw-stat-audit.json" \
+            2> "$artifact_dir/sample-stage.err"; then
+            echo "Read-only raw-stat audit completed"
+          else
+            # Only the candidate-query stage has permission to emit a detailed
+            # traceback: its SQL is fixed and contains no connection credentials.
+            # Other stages remain limited to preapproved diagnostic codes.
+            if grep -qx 'sample_debug_begin' "$artifact_dir/sample-stage.err" &&
+               grep -qx 'sample_debug_end' "$artifact_dir/sample-stage.err"; then
+              echo "::group::PostgreSQL candidate query traceback"
+              sed -n '/^sample_debug_begin$/,/^sample_debug_end$/p' "$artifact_dir/sample-stage.err" | head -c 12000
+              echo
+              echo "::endgroup::"
+            fi
+            stage_code=$(tail -n 1 "$artifact_dir/sample-stage.err" | head -c 160 || true)
+            case "$stage_code" in
+              sample_stage:dependency_unavailable|sample_stage:connection_config_unavailable|sample_stage:postgres_connection_failed|sample_stage:postgres_session_failed|sample_stage:postgres_candidates_failed|sample_stage:postgres_candidates_sql_failed|sample_stage:postgres_candidates_processing_failed|sample_stage:postgres_match_rows_failed|sample_stage:postgres_schema_mismatch|sample_stage:postgres_permission_denied|sample_stage:postgres_query_timeout|sample_stage:s3_partition_read_failed|sample_stage:sample_serialization_failed|sample_stage:unexpected_failure)
+                echo "::error::$stage_code" ;;
+              *) echo "::error::remote_sample_execution_failed" ;;
+            esac
+            exit 1
+          fi
+          if [[ ! -s "$artifact_dir/raw-stat-audit.json" ]]; then
+            echo "::error::empty_sample_artifact"
+            exit 1
+          fi
+          if [[ "$(wc -c < "$artifact_dir/raw-stat-audit.json")" -gt 8388608 ]]; then
+            echo "::error::sample_artifact_over_budget"
+            exit 1
+          fi
+      - name: Upload bounded sample artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nbbet-raw-stat-audit
+          path: ${{ env.ARTIFACT_DIR }}/raw-stat-audit.json
+          retention-days: 1
+          if-no-files-found: error
