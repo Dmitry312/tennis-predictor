@@ -5,6 +5,8 @@ on:
     paths:
       - 'infra/audit/production_parquet_schema_audit.py'
       - 'infra/audit/parquet_row_review.py'
+      - 'infra/audit/production_parquet_row_review.py'
+      - '.github/workflows/production-parquet-row-review.yml'
       - 'tests/test_production_parquet_schema_audit.py'
       - 'tests/test_parquet_row_review.py'
       - 'tests/test_parquet_schema_audit_workflow.py'
@@ -27,6 +29,6 @@ jobs:
       - name: Install offline test dependencies
         run: python -m pip install --disable-pip-version-check pytest==8.3.5 pyarrow==19.0.1 PyYAML==6.0.2
       - name: Compile standalone audit
-        run: python -m py_compile infra/audit/production_parquet_schema_audit.py infra/audit/parquet_row_review.py
+        run: python -m py_compile infra/audit/production_parquet_schema_audit.py infra/audit/parquet_row_review.py infra/audit/production_parquet_row_review.py
       - name: Run offline audit and workflow safety tests
         run: python -m pytest -q tests/test_production_parquet_schema_audit.py tests/test_parquet_schema_audit_workflow.py tests/test_parquet_row_review.py
