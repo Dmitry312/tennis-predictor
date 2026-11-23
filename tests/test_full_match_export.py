@@ -70,3 +70,16 @@ def test_rejects_duplicate_explicit_match_ids():
     import pytest
     with pytest.raises(ValueError, match="selection"):
         build_export({}, {}, match_ids=["x", "x"])
+
+
+def test_binary_fields_are_preserved_losslessly():
+    import base64
+    import json
+    match = "00000000-0000-0000-0000-000000000004"
+    binary = b"\\x00\\xff\\x01"
+    source = {"nbbet_details/": {match: {"source_keys": ["x.parquet"],
+                                         "rows": [{"canonical_match_id": match,
+                                                   "opaque": binary}]}}}
+    result = json.loads(build_export(source, {match: {}}, match_ids=[match]))
+    encoded = result["matches"][0]["s3"]["nbbet_details/"]["rows"][0]["opaque"]["binary_base64"]
+    assert base64.b64decode(encoded) == binary
