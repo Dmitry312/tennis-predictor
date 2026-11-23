@@ -100,12 +100,20 @@ jobs:
             -o KbdInteractiveAuthentication=no -o ForwardAgent=no \
             -o ClearAllForwardings=yes -i "$ssh_dir/key" \
             -l "$SSH_USER" -- "$SSH_HOST" \
-            'timeout --kill-after=2s 110s /root/Tennis_pelmen_model/.venv/bin/python -I -B - 2>/dev/null' \
+            'timeout --kill-after=2s 110s /root/Tennis_pelmen_model/.venv/bin/python -I -B -' \
             < <(cat infra/audit/full_match_export.py infra/audit/production_full_match_sample.py) \
-            > "$artifact_dir/match-sample.json" 2>/dev/null; then
+            > "$artifact_dir/match-sample.json" \
+            2> "$artifact_dir/sample-stage.err"; then
             echo "Read-only sample completed"
           else
-            echo "::error::remote_sample_execution_failed"
+            # Remote stderr is untrusted; only an exact known diagnostic token
+            # is permitted in GitHub logs. Never print exception messages.
+            stage_code=$(head -c 160 "$artifact_dir/sample-stage.err" || true)
+            case "$stage_code" in
+              sample_stage:dependency_unavailable|sample_stage:connection_config_unavailable|sample_stage:postgres_select_failed|sample_stage:s3_partition_read_failed|sample_stage:sample_serialization_failed|sample_stage:unexpected_failure)
+                echo "::error::$stage_code" ;;
+              *) echo "::error::remote_sample_execution_failed" ;;
+            esac
             exit 1
           fi
           if [[ ! -s "$artifact_dir/match-sample.json" ]]; then
