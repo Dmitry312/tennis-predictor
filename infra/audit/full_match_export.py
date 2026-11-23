@@ -115,3 +115,64 @@ def build_export(objects_by_prefix, pg_rows, *, max_bytes=MAX_EXPORT_BYTES):
     if len(encoded) > max_bytes:
         raise ValueError("export exceeds artifact budget")
     return encoded
+
+
+def related_partition_keys(pbp_s3_path):
+    """NBBET detail_job writes all three datasets under the same part suffix.
+
+    This is a candidate lookup, not proof that each object exists.
+    """
+    import re
+    if not isinstance(pbp_s3_path, str):
+        return None
+    match = re.fullmatch(
+        r"pbp/(gender=[MF]/level=[a-z_]+/year=[0-9]{4}/part-[A-Za-z0-9_-]+\\.parquet)",
+        pbp_s3_path,
+    )
+    if not match:
+        return None
+    part = match.group(1)
+    return {prefix: prefix + part for prefix in PREFIXES}
+
+
+def gather_exact_keys(client, bucket, keys):
+    """Read every row from exact known partition objects, without LIST scans."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    result = {prefix: {} for prefix in PREFIXES}
+    if len(keys) > MAX_OBJECTS:
+        raise ValueError("too many partition objects")
+    for prefix, key in keys:
+        if prefix not in PREFIXES or not isinstance(key, str) or not key.startswith(prefix):
+            raise ValueError("invalid partition")
+        try:
+            head = client.head_object(Bucket=bucket, Key=key)
+        except Exception as exc:
+            if getattr(exc, "response", {}).get("Error", {}).get("Code") in ("404", "NoSuchKey", "NotFound"):
+                continue
+            raise
+        size = head.get("ContentLength")
+        if type(size) is not int or not 12 <= size <= MAX_OBJECT:
+            raise ValueError("partition size unsupported")
+        stream = client.get_object(Bucket=bucket, Key=key)["Body"]
+        try:
+            payload = stream.read(size + 1)
+        finally:
+            stream.close()
+        if len(payload) != size:
+            raise ValueError("partition length mismatch")
+        parquet = pq.ParquetFile(pa.BufferReader(payload))
+        if parquet.metadata.num_rows > 100000 or parquet.metadata.num_columns > 128:
+            raise ValueError("partition row/column limit")
+        for row in parquet.read().to_pylist():
+            try:
+                mid = str(uuid.UUID(str(row.get("canonical_match_id"))))
+            except (ValueError, TypeError, AttributeError):
+                continue
+            record = result[prefix].setdefault(mid, {"source_keys": [], "rows": []})
+            if key not in record["source_keys"]:
+                record["source_keys"].append(key)
+            if len(record["rows"]) >= MAX_ROWS_PER_MATCH_SOURCE:
+                raise ValueError("match row budget")
+            record["rows"].append(row)
+    return result
