@@ -81,7 +81,7 @@ def gather(client, bucket, *, max_keys=200):
                     if len(record["rows"]) < MAX_ROWS_PER_MATCH_SOURCE:
                         record["rows"].append(row)
                     else:
-                        record["truncated"] = True
+                        raise ValueError("match source exceeds row budget")
             if requests >= MAX_OBJECTS:
                 raise ValueError("S3 object budget exhausted before complete scan")
             if not response.get("IsTruncated", False):
