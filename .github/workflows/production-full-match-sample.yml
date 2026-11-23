@@ -1,0 +1,91 @@
+name: Manual production full match sample
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-full-match-sample
+  cancel-in-progress: false
+
+jobs:
+  full-match-sample:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read audited script from selected main commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          sparse-checkout: infra/audit
+
+      - name: Require SSH settings and trusted fingerprint
+        shell: bash
+        env:
+          SSH_HOST: ${{ secrets.SERVER_HOST }}
+          SSH_USER: ${{ secrets.SERVER_USER }}
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SSH_FINGERPRINT: ${{ secrets.SERVER_HOST_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$SSH_HOST" || -z "$SSH_USER" || -z "$SSH_KEY" ]]; then
+            echo "::error::Required SSH settings are missing"
+            exit 1
+          fi
+          if [[ ! "$SSH_FINGERPRINT" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]]; then
+            echo "::error::A trusted SHA256 host fingerprint is required"
+            exit 1
+          fi
+          if [[ ! "$SSH_HOST" =~ ^[A-Za-z0-9][A-Za-z0-9.-]*$ || ! "$SSH_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
+            echo "::error::Exactly one SSH host is required"
+            exit 1
+          fi
+
+      - name: Verify ED25519 host key and export read-only match sample
+        shell: bash
+        env:
+          SSH_HOST: ${{ secrets.SERVER_HOST }}
+          SSH_USER: ${{ secrets.SERVER_USER }}
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SSH_FINGERPRINT: ${{ secrets.SERVER_HOST_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          umask 077
+          ssh_dir=$(mktemp -d "$RUNNER_TEMP/ssh-auth.XXXXXX")
+          trap 'rm -rf -- "$ssh_dir"' EXIT
+          # Untrusted public key discovery only; no authentication or command.
+          timeout 15s ssh-keyscan -T 15 -p 22 -t ed25519 -- "$SSH_HOST" \
+            > "$ssh_dir/candidate" 2>/dev/null
+          # Require exactly one plain ED25519 key; never trust scan output alone.
+          awk 'NF == 3 && $2 == "ssh-ed25519" { print; count++ }
+               END { if (count != 1) exit 1 }' \
+            "$ssh_dir/candidate" > "$ssh_dir/known_hosts"
+          actual_fingerprint=$(ssh-keygen -lf "$ssh_dir/known_hosts" -E sha256 2>/dev/null | awk '{print $2}')
+          if [[ "$actual_fingerprint" != "$SSH_FINGERPRINT" ]]; then
+            echo "::error::ED25519 host fingerprint mismatch"
+            exit 1
+          fi
+          printf '%s\n' "$SSH_KEY" > "$ssh_dir/key"
+          # No server files are created; script is streamed over stdin.\n          artifact_dir=$(mktemp -d "$RUNNER_TEMP/match-sample.XXXXXX")\n          echo "ARTIFACT_DIR=$artifact_dir" >> "$GITHUB_ENV"
+          timeout --kill-after=2s 125s ssh -F /dev/null -T -p 22 \
+            -o BatchMode=yes -o ConnectionAttempts=1 -o ConnectTimeout=15 \
+            -o HostKeyAlgorithms=ssh-ed25519 -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$ssh_dir/known_hosts" \
+            -o GlobalKnownHostsFile=/dev/null -o UpdateHostKeys=no \
+            -o VerifyHostKeyDNS=no -o IdentitiesOnly=yes -o IdentityAgent=none \
+            -o PreferredAuthentications=publickey -o PasswordAuthentication=no \
+            -o KbdInteractiveAuthentication=no -o ForwardAgent=no \
+            -o ClearAllForwardings=yes -i "$ssh_dir/key" \
+            -l "$SSH_USER" -- "$SSH_HOST" \
+            'timeout --kill-after=2s 110s /root/Tennis_pelmen_model/.venv/bin/python -I -B - 2>/dev/null' \
+            < <(cat infra/audit/full_match_export.py infra/audit/production_full_match_sample.py) \\\n            > "$artifact_dir/match-sample.json" 2>/dev/null\n          test -s "$artifact_dir/match-sample.json"\n          test "$(wc -c < "$artifact_dir/match-sample.json")" -le 8388608
+      - name: Upload bounded sample artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: production-match-sample
+          path: ${{ env.ARTIFACT_DIR }}/match-sample.json
+          retention-days: 1
+          if-no-files-found: error
