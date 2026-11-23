@@ -103,8 +103,10 @@ def fetch_pg(connection, ids):
         return {str(key): row for key, row in cursor.fetchall()}
 
 
-def build_export(objects_by_prefix, pg_rows, *, max_bytes=MAX_EXPORT_BYTES):
-    ids = select_shared_matches(objects_by_prefix)
+def build_export(objects_by_prefix, pg_rows, *, max_bytes=MAX_EXPORT_BYTES, match_ids=None):
+    ids = list(match_ids) if match_ids is not None else select_shared_matches(objects_by_prefix)
+    if len(ids) > MAX_MATCHES or len(set(ids)) != len(ids):
+        raise ValueError("invalid match selection")
     export = {"version": 1, "complete_history": False, "matches": []}
     for match_id in ids:
         entry = {"match_id": match_id, "postgres": pg_rows.get(match_id),
@@ -175,4 +177,26 @@ def gather_exact_keys(client, bucket, keys):
             if len(record["rows"]) >= MAX_ROWS_PER_MATCH_SOURCE:
                 raise ValueError("match row budget")
             record["rows"].append(row)
+    return result
+
+
+def select_pg_candidates(connection, *, limit=MAX_MATCHES):
+    """Prefer known PBP paths; return canonical IDs and exact object candidates."""
+    if type(limit) is not int or not 1 <= limit <= MAX_MATCHES:
+        raise ValueError("invalid limit")
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT match_id::text, pbp_s3_path FROM public.matches "
+            "WHERE duplicate_of IS NULL AND pbp_s3_path IS NOT NULL "
+            "AND pbp_s3_path LIKE 'pbp/%' "
+            "ORDER BY match_date DESC NULLS LAST, match_id LIMIT %s", (limit * 4,)
+        )
+        rows = cursor.fetchall()
+    result = []
+    for match_id, path in rows:
+        keys = related_partition_keys(path)
+        if keys is not None:
+            result.append((str(match_id), keys))
+        if len(result) >= limit:
+            break
     return result
