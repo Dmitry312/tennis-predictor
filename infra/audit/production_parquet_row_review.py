@@ -14,12 +14,12 @@ from pathlib import Path
 
 PREFIXES = ("pbp/", "nbbet_stats/", "nbbet_details/")
 MAX_BYTES = 8 * 1024 * 1024
-MAX_CALLS = 30
+MAX_CALLS = 45
 MAX_OUTPUT = 24000
 MAX_FILE = 256 * 1024
 MAX_LIST = 200
-MAX_FILES = 9
-MAX_ROWS = 12
+MAX_FILES = 18
+MAX_ROWS = 6
 FIELDS = ("S3_ENDPOINT_URL", "S3_REGION", "S3_BUCKET", "S3_ACCESS_KEY_ID",
           "S3_SECRET_ACCESS_KEY", "POSTGRES_HOST", "POSTGRES_PORT",
           "POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_DB")
@@ -86,6 +86,7 @@ def collect(client, bucket, budget):
     import pyarrow.parquet as pq
     samples = []
     identities = []
+    fingerprints = {prefix: set() for prefix in PREFIXES}
     for prefix in PREFIXES:
         budget.charge()
         page = client.list_objects_v2(Bucket=bucket, Prefix=prefix, MaxKeys=MAX_LIST)
@@ -101,8 +102,8 @@ def collect(client, bucket, budget):
         ]
         # Lexicographic spacing, not random sampling or representative coverage.
         picks = [candidates[i] for i in sorted(set(
-            j * (len(candidates) - 1) // max(1, min(3, len(candidates)) - 1)
-            for j in range(min(3, len(candidates)))
+            j * (len(candidates) - 1) // max(1, min(6, len(candidates)) - 1)
+            for j in range(min(6, len(candidates)))
         ))] if candidates else []
         for item in picks:
             key, size = item["Key"], item["Size"]
@@ -115,7 +116,14 @@ def collect(client, bucket, budget):
                 stream.close()
             if len(data) != size:
                 raise ValueError("object_size")
-            table = pq.read_table(pa.BufferReader(data), columns=[
+            parquet = pq.ParquetFile(pa.BufferReader(data))
+            if parquet.metadata.num_rows > 100000 or parquet.metadata.num_row_groups > 32 or parquet.metadata.num_columns > 64:
+                raise ValueError("table_size")
+            fingerprint = __import__("hashlib").sha256(parquet.schema_arrow.remove_metadata().serialize().to_pybytes()).hexdigest()[:16]
+            if fingerprint in fingerprints[prefix]:
+                continue
+            fingerprints[prefix].add(fingerprint)
+            table = parquet.read(columns=[
                 c for c in pq.read_schema(pa.BufferReader(data)).names
                 if c in (PBP_INT | PBP_BOOL | STATS_INT | STATS_NUMERIC |
                          DETAIL_INT | DETAIL_BOOL | {"sets_json", "score_server",
@@ -137,11 +145,12 @@ def collect(client, bucket, budget):
                 entries.append({"match": alias, "values": sanitize_row(prefix, row)})
             samples.append({
                 "prefix": prefix,
+                "schema_fingerprint": fingerprint,
                 "schema": sorted({c for c in table.column_names if c in (PBP_INT | PBP_BOOL | STATS_INT | STATS_NUMERIC | DETAIL_INT | DETAIL_BOOL | {"sets_json", "score_server", "score_returner", "point_type"})}),
                 "rows_in_file": table.num_rows,
                 "examples": entries,
             })
-    return samples, identities
+    return samples, identities, {k: len(v) for k, v in fingerprints.items()}
 
 
 def pg_surfaces(values, identities):
@@ -197,12 +206,13 @@ def main():
         else:
             raise ValueError("operation")
     client.meta.events.register("before-parameter-build.s3", guard)
-    samples, identities = collect(client, values["S3_BUCKET"], budget)
+    samples, identities, fingerprint_counts = collect(client, values["S3_BUCKET"], budget)
     surfaces = pg_surfaces(values, identities)
     report = {
         "version": 1, "semantic_verification": "pending",
         "sampling": "first_200_keys_per_prefix_lexicographic_not_representative",
         "partial": True, "samples": samples,
+        "sampled_schema_fingerprints": fingerprint_counts,
         "postgres_surfaces": [
             {"match": "M" + str(i + 1), "found": identity in surfaces,
              "surface": surfaces.get(identity)}
@@ -213,6 +223,10 @@ def main():
         "budget": {"calls": budget.calls, "bytes": budget.bytes},
     }
     output = json.dumps(report, ensure_ascii=True, separators=(",", ":"), allow_nan=False)
+    while len(output.encode()) > MAX_OUTPUT and any(x["examples"] for x in samples):
+        item = max(samples, key=lambda x: len(x["examples"]))
+        item["examples"].pop()
+        output = json.dumps(report, ensure_ascii=True, separators=(",", ":"), allow_nan=False)
     if len(output.encode()) > MAX_OUTPUT:
         raise ValueError("output_limit")
     print(output)
