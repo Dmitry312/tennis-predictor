@@ -137,7 +137,7 @@ def collect(client, bucket, budget):
                 entries.append({"match": alias, "values": sanitize_row(prefix, row)})
             samples.append({
                 "prefix": prefix,
-                "schema": sorted({c for c in table.column_names if c != "canonical_match_id"}),
+                "schema": sorted({c for c in table.column_names if c in (PBP_INT | PBP_BOOL | STATS_INT | STATS_NUMERIC | DETAIL_INT | DETAIL_BOOL | {"sets_json", "score_server", "score_returner", "point_type"})}),
                 "rows_in_file": table.num_rows,
                 "examples": entries,
             })
@@ -149,8 +149,7 @@ def pg_surfaces(values, identities):
     if not identities:
         return {}
     import psycopg2
-    from psycopg2 import sql
-    connection = psycopg2.connect(
+        connection = psycopg2.connect(
         host=values["POSTGRES_HOST"], port=int(values["POSTGRES_PORT"]),
         user=values["POSTGRES_USER"], password=values["POSTGRES_PASSWORD"],
         dbname=values["POSTGRES_DB"], connect_timeout=3,
