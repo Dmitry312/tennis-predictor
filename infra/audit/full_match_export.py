@@ -181,23 +181,33 @@ def gather_exact_keys(client, bucket, keys):
     return result
 
 
+class CandidateReadError(Exception):
+    """Safe stage identifier only; never includes database values."""
+
+
 def select_pg_candidates(connection, *, limit=MAX_MATCHES):
     """Prefer known PBP paths; return canonical IDs and exact object candidates."""
     if type(limit) is not int or not 1 <= limit <= MAX_MATCHES:
         raise ValueError("invalid limit")
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT match_id::text, pbp_s3_path FROM public.matches "
-            "WHERE duplicate_of IS NULL AND pbp_s3_path IS NOT NULL "
-            "AND pbp_s3_path LIKE 'pbp/%' "
-            "ORDER BY match_date DESC NULLS LAST, match_id LIMIT %s", (limit * 4,)
-        )
-        rows = cursor.fetchall()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT match_id::text, pbp_s3_path FROM public.matches "
+                "WHERE duplicate_of IS NULL AND pbp_s3_path IS NOT NULL "
+                "AND pbp_s3_path LIKE 'pbp/%' "
+                "ORDER BY match_date DESC NULLS LAST, match_id LIMIT %s", (limit * 4,)
+            )
+            rows = cursor.fetchall()
+    except Exception as exc:
+        raise CandidateReadError("sql") from exc
     result = []
-    for match_id, path in rows:
-        keys = related_partition_keys(path)
-        if keys is not None:
-            result.append((str(match_id), keys))
-        if len(result) >= limit:
-            break
+    try:
+        for match_id, path in rows:
+            keys = related_partition_keys(path)
+            if keys is not None:
+                result.append((str(match_id), keys))
+            if len(result) >= limit:
+                break
+    except Exception as exc:
+        raise CandidateReadError("processing") from exc
     return result
