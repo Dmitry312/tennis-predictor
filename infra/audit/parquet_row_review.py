@@ -57,7 +57,7 @@ def safe_sets(raw):
     # Shape not yet verified: do not guess winner or positional semantics.
     # Emit only type/length evidence until the user reviews raw structures
     # in a protected environment; never export arbitrary nested payload.
-    return {
+    result = {
         "kind": "list",
         "length": len(value),
         "element_types": [
@@ -68,6 +68,25 @@ def safe_sets(raw):
             for x in value
         ],
     }
+    # Numeric-keyed fields are emitted only when every value is a bounded
+    # primitive score or a short numeric pair. Unknown strings and objects
+    # never cross the review boundary, even under numeric keys.
+    safe = []
+    for element in value:
+        if not isinstance(element, dict) or len(element) > 12:
+            safe.append(None)
+            continue
+        item = {}
+        for key, val in element.items():
+            if type(key) is not str or not re.fullmatch(r"[0-9]{1,2}", key):
+                continue
+            if type(val) is int and 0 <= val <= 99:
+                item[key] = val
+            elif isinstance(val, (list, tuple)) and len(val) == 2 and all(type(x) is int and 0 <= x <= 99 for x in val):
+                item[key] = list(val)
+        safe.append(item)
+    result["numeric_fields"] = safe
+    return result
 
 
 def sanitize_row(prefix, row):
