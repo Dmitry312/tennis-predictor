@@ -23,3 +23,23 @@ def test_fails_on_oversized_export():
     import pytest
     with pytest.raises(ValueError, match="budget"):
         build_export(sources, {}, max_bytes=30)
+
+
+
+def test_selection_is_deterministic_and_bounded():
+    details = {f"match-{n:02d}": {"rows": []} for n in range(20)}
+    assert select_shared_matches({"nbbet_details/": details}, limit=3) == [
+        "match-00", "match-01", "match-02"
+    ]
+
+
+def test_export_keeps_all_nested_json_and_nulls():
+    import json
+    match = "00000000-0000-0000-0000-000000000002"
+    raw = {"players_json": '{"p1":"Player One","p2":"Player Two"}',
+           "sets_json": '[{"first":7,"second":6,"tb":5}]',
+           "extra_json": None}
+    source = {"nbbet_details/": {match: {"rows": [raw], "source_keys": ["details/x.parquet"]}}}
+    record = json.loads(build_export(source, {match: {"player1": "Player One"}}))["matches"][0]
+    assert record["s3"]["nbbet_details/"]["rows"][0] == raw
+    assert record["postgres"]["player1"] == "Player One"
