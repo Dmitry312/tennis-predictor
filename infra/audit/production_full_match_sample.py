@@ -17,6 +17,12 @@ def stage(name, operation, *, postgres=False):
         # SQLSTATE is a fixed protocol identifier, never exception text.
         if postgres:
             sqlstate = getattr(exc, "pgcode", None)
+            if isinstance(exc, CandidateReadError):
+                if exc.args == ("processing",):
+                    name = "postgres_candidates_processing_failed"
+                else:
+                    name = "postgres_candidates_sql_failed"
+                sqlstate = getattr(exc.__cause__, "pgcode", None)
             if sqlstate in ("42703", "42P01", "42883", "42804"):
                 name = "postgres_schema_mismatch"
             elif sqlstate == "42501":
