@@ -51,7 +51,7 @@ def read_config():
             if end < 0 or (value[end + 1:].strip() and not value[end + 1:].lstrip().startswith("#")):
                 raise ValueError("config")
             value = value[1:end]
-        elif not re.fullmatch(r"[^\\s#'\\\"\\\\]+", value):
+        elif not value.isprintable() or any(ch.isspace() or ch in ("#", "'", '"', chr(92)) for ch in value):
             raise ValueError("config")
         if not value or len(value) > 4096 or any(x in value for x in ("\\\\", "$", "`", "\\x00")):
             raise ValueError("config")
