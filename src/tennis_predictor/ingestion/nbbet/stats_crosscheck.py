@@ -145,9 +145,11 @@ def reconcile(*, day, lookback, apply, max_matches, pause, deadline):
         groups[(m.gender, m.level, m.match_date.year)].append(m)
     summary = dict(candidates=len(candidates), checked=0, unchanged=0,
                    changed=0, missing_stats=0, failures=0, fields_changed=0, written=0)
+    pending = []
     for (gender, level, year), matches in sorted(groups.items()):
         stored = load_group(s3, bucket, gender, level, year, matches)
         corrections = []
+        raw_corrections = []
         for m in matches:
             if time.monotonic() >= deadline:
                 raise TimeoutError("crosscheck deadline exceeded before 11:00")
@@ -169,28 +171,38 @@ def reconcile(*, day, lookback, apply, max_matches, pause, deadline):
                     summary["fields_changed"] += len(differences)
                     log.info("stats_changed match=%s fields=%d", mid, len(differences))
                     corrections.extend(fresh)
+                    raw_corrections.append({"canonical_match_id": mid,
+                                            "nbbet_match_id": m.nbbet_match_id,
+                                            "raw_json": json.dumps(parsed.raw_page_tennis_event, ensure_ascii=False)})
                 else:
                     summary["unchanged"] += 1
             except Exception as exc:
                 summary["failures"] += 1
                 log.warning("stats_check_failed match=%s reason=%s", mid, type(exc).__name__)
             time.sleep(pause)
-        if corrections and apply:
-            # One immutable version per group, timestamp is monotonically
-            # newer than historical ingest; readers must select latest fetched_at.
+        if corrections:
+            pending.append((gender, level, year, corrections, raw_corrections))
+    # Never publish partial audit results.
+    if summary['failures'] or summary['missing_stats']:
+        print(json.dumps(summary, sort_keys=True))
+        raise RuntimeError('crosscheck incomplete: no corrections published')
+    if apply:
+        for gender, level, year, corrections, raw_corrections in pending:
             stamp = datetime.utcnow()
-            for row in corrections:
-                row["fetched_at"] = stamp
-            key = (f"nbbet_stats/gender={gender}/level={level}/year={year}/"
-                   f"part-{stamp:%Y%m%dT%H%M%S%f}-crosscheck-{len(corrections)}.parquet")
-            buffer = io.BytesIO()
-            pq.write_table(pa.Table.from_pylist(corrections), buffer, compression="zstd")
-            buffer.seek(0)
-            s3.put_object(Bucket=bucket, Key=key, Body=buffer, IfNoneMatch="*")
-            summary["written"] += len(corrections)
+            prefix = f'gender={gender}/level={level}/year={year}/'
+            name = f'part-{stamp:%Y%m%dT%H%M%S%f}-crosscheck-{len(corrections)}.parquet'
+            for row in corrections + raw_corrections:
+                row['fetched_at'] = stamp
+            # Archive the exact fetched payload before publishing its statistics.
+            for kind, rows in (('nbbet_raw', raw_corrections),
+                               ('nbbet_stats', corrections)):
+                buffer = io.BytesIO()
+                pq.write_table(pa.Table.from_pylist(rows), buffer, compression='zstd')
+                buffer.seek(0)
+                s3.put_object(Bucket=bucket, Key=f'{kind}/{prefix}{name}',
+                              Body=buffer, IfNoneMatch='*')
+            summary['written'] += len(corrections)
     print(json.dumps(summary, sort_keys=True))
-    if summary["failures"] or summary["missing_stats"]:
-        raise RuntimeError("crosscheck incomplete: inspect summary")
     return summary
 
 
