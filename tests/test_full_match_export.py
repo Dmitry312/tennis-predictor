@@ -89,6 +89,10 @@ def test_candidate_query_errors_are_separate_from_processing_errors():
     import pytest
     from infra.audit.full_match_export import CandidateReadError, select_pg_candidates
 
+    class BadMatchId:
+        def __str__(self):
+            raise TypeError("invalid match identifier")
+
     class Cursor:
         def __init__(self, fail_sql=False, bad_row=False):
             self.fail_sql = fail_sql
@@ -105,7 +109,7 @@ def test_candidate_query_errors_are_separate_from_processing_errors():
                 raise RuntimeError("do not expose this SQL error")
 
         def fetchall(self):
-            return [(None, "pbp/gender=M/level=tour/year=2025/part-abc-00001.parquet")] if self.bad_row else []
+            return [(BadMatchId(), "pbp/gender=M/level=tour/year=2025/part-abc-00001.parquet")] if self.bad_row else []
 
     class Connection:
         def __init__(self, **kwargs):
