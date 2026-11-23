@@ -54,3 +54,19 @@ def test_exact_partition_mapping_from_writer_layout():
     assert result["nbbet_stats/"] == key.replace("pbp/", "nbbet_stats/")
     assert related_partition_keys("../secret") is None
     assert related_partition_keys("pbp/gender=M/level=tour/year=2025/../x.parquet") is None
+
+
+def test_explicit_pg_ids_keep_missing_details():
+    import json
+    match = "00000000-0000-0000-0000-000000000003"
+    data = json.loads(build_export({"pbp/": {}, "nbbet_details/": {}},
+                                   {match: {"match_id": match}},
+                                   match_ids=[match]))
+    assert data["matches"][0]["postgres"]["match_id"] == match
+    assert data["matches"][0]["s3"]["nbbet_details/"] is None
+
+
+def test_rejects_duplicate_explicit_match_ids():
+    import pytest
+    with pytest.raises(ValueError, match="selection"):
+        build_export({}, {}, match_ids=["x", "x"])
