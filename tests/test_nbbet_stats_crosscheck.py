@@ -54,3 +54,57 @@ def test_newest_parquet_row_wins():
     selected = latest_rows(rows)
     assert selected[("abc", 2)][1]["aces_p1"] == 2
     assert selected[("abc", 1)][1]["aces_p1"] == 3
+
+
+def test_reconcile_dry_run_never_writes(monkeypatch):
+    import time
+    from datetime import date
+    from types import SimpleNamespace
+    from tennis_predictor.ingestion.nbbet import stats_crosscheck as mod
+
+    match = SimpleNamespace(match_id="abc", nbbet_match_id=123,
+                            nbbet_slug="123-slug", gender="M", level="challenger",
+                            match_date=date(2026, 11, 23), pbp_s3_path="pbp/example")
+    stored = {("abc", 0): ("2026-11-23", row(0, first_serve_points_all_p2=10,
+                                              canonical_match_id="abc"))}
+    new = SimpleNamespace(stats=[row(0, first_serve_points_all_p2=9)])
+    writes = []
+    monkeypatch.setattr(mod, "fetch_candidates", lambda *args: [match])
+    monkeypatch.setattr(mod, "get_s3_client", lambda: SimpleNamespace(put_object=lambda **k: writes.append(k)))
+    monkeypatch.setattr(mod, "get_settings", lambda: SimpleNamespace(s3_bucket="test"))
+    monkeypatch.setattr(mod, "make_session", lambda **kw: object())
+    monkeypatch.setattr(mod, "load_group", lambda *args: stored)
+    monkeypatch.setattr(mod, "fetch_match_page", lambda *args: "<html/>")
+    monkeypatch.setattr(mod, "parse_match_page", lambda *args: new)
+    monkeypatch.setattr(mod.time, "sleep", lambda *_: None)
+    result = mod.reconcile(day=date(2026, 11, 23), lookback=1, apply=False,
+                           max_matches=100, pause=0.5, deadline=time.monotonic() + 100)
+    assert result["changed"] == 1
+    assert result["written"] == 0
+    assert writes == []
+
+
+def test_reconcile_does_not_publish_partial_results(monkeypatch):
+    import time
+    from datetime import date
+    from types import SimpleNamespace
+    from tennis_predictor.ingestion.nbbet import stats_crosscheck as mod
+
+    match = SimpleNamespace(match_id="abc", nbbet_match_id=123,
+                            nbbet_slug="123-slug", gender="M", level="challenger",
+                            match_date=date(2026, 11, 23), pbp_s3_path="pbp/example")
+    writes = []
+    monkeypatch.setattr(mod, "fetch_candidates", lambda *args: [match])
+    monkeypatch.setattr(mod, "get_s3_client", lambda: SimpleNamespace(put_object=lambda **k: writes.append(k)))
+    monkeypatch.setattr(mod, "get_settings", lambda: SimpleNamespace(s3_bucket="test"))
+    monkeypatch.setattr(mod, "make_session", lambda **kw: object())
+    monkeypatch.setattr(mod, "load_group", lambda *args: {
+        ("abc", 0): ("2026-11-23", row(0, aces_p1=3, canonical_match_id="abc"))})
+    monkeypatch.setattr(mod, "fetch_match_page", lambda *args: "<html/>")
+    monkeypatch.setattr(mod, "parse_match_page", lambda *args: SimpleNamespace(
+        stats=[row(0, aces_p1=None)]))
+    monkeypatch.setattr(mod.time, "sleep", lambda *_: None)
+    with pytest.raises(RuntimeError, match="incomplete"):
+        mod.reconcile(day=date(2026, 11, 23), lookback=1, apply=True,
+                      max_matches=100, pause=0.5, deadline=time.monotonic() + 100)
+    assert writes == []
