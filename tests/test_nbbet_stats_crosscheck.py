@@ -56,7 +56,7 @@ def test_newest_parquet_row_wins():
     assert selected[("abc", 1)][1]["aces_p1"] == 3
 
 
-def test_reconcile_dry_run_never_writes(monkeypatch):
+def test_reconcile_dry_run_never_writes(monkeypatch, capsys):
     import time
     from datetime import date
     from types import SimpleNamespace
@@ -80,7 +80,9 @@ def test_reconcile_dry_run_never_writes(monkeypatch):
     monkeypatch.setattr(mod.time, "sleep", lambda *_: None)
     result = mod.reconcile(day=date(2026, 11, 23), lookback=1, apply=False,
                            max_matches=100, pause=0.5, deadline=time.monotonic() + 100)
+    import json
     assert result["changed"] == 1
+    assert json.loads(capsys.readouterr().out) == result
     assert result["written"] == 0
     assert writes == []
 

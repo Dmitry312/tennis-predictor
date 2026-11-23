@@ -215,7 +215,8 @@ def reconcile(*, day, lookback, apply, max_matches, pause, deadline):
                 s3.put_object(Bucket=bucket, Key=f'{kind}/{prefix}{name}',
                               Body=buffer, IfNoneMatch='*')
             summary['written'] += len(corrections)
-    print(json.dumps(summary, sort_keys=True))
+    summary['details'] = detailed_changes
+    print(json.dumps(summary, sort_keys=True, default=str))
     return summary
 
 
