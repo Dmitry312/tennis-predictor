@@ -78,7 +78,7 @@ def safe_sets(raw):
             continue
         item = {}
         for key, val in element.items():
-            if type(key) is not str or not re.fullmatch(r"[0-9]{1,2}", key):
+            if type(key) is not str or not re.fullmatch(r"[1-8]", key):
                 continue
             if type(val) is int and 0 <= val <= 99:
                 item[key] = val
