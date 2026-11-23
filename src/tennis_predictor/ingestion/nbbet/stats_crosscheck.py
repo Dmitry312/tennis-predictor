@@ -145,6 +145,7 @@ def reconcile(*, day, lookback, apply, max_matches, pause, deadline):
         groups[(m.gender, m.level, m.match_date.year)].append(m)
     summary = dict(candidates=len(candidates), checked=0, unchanged=0,
                    changed=0, missing_stats=0, failures=0, fields_changed=0, written=0)
+    detailed_changes = []
     pending = []
     consecutive_failures = 0
     for (gender, level, year), matches in sorted(groups.items()):
@@ -172,6 +173,13 @@ def reconcile(*, day, lookback, apply, max_matches, pause, deadline):
                     summary["changed"] += 1
                     summary["fields_changed"] += len(differences)
                     log.info("stats_changed match=%s fields=%d", mid, len(differences))
+                    detailed_changes.append({"canonical_match_id": mid,
+                                             "nbbet_match_id": m.nbbet_match_id,
+                                             "match_date": str(m.match_date),
+                                             "gender": m.gender, "level": m.level,
+                                             "changes": [{"scope": scope, "field": field,
+                                                          "before": before, "after": after}
+                                                         for scope, field, before, after in differences]})
                     corrections.extend(fresh)
                     raw_corrections.append({"canonical_match_id": mid,
                                             "nbbet_match_id": m.nbbet_match_id,
