@@ -58,25 +58,29 @@ def main():
     boto3, psycopg2, Config = stage("dependency_unavailable", imports)
     settings = stage("connection_config_unavailable", config)
 
-    def query_pg():
-        db = psycopg2.connect(
+    def connect_pg():
+        return psycopg2.connect(
             host=settings["POSTGRES_HOST"], port=int(settings["POSTGRES_PORT"]),
             user=settings["POSTGRES_USER"], password=settings["POSTGRES_PASSWORD"],
             dbname=settings["POSTGRES_DB"], connect_timeout=5,
             options="-c default_transaction_read_only=on -c statement_timeout=5000 "
                     "-c lock_timeout=1000 -c search_path=pg_catalog",
         )
-        try:
-            db.set_session(readonly=True, autocommit=False)
-            candidates = select_pg_candidates(db)
-            ids = [mid for mid, _ in candidates]
-            pg_rows = fetch_pg(db, ids)
-            return candidates, ids, pg_rows
-        finally:
-            db.rollback()
-            db.close()
 
-    candidates, ids, pg_rows = stage("postgres_select_failed", query_pg)
+    db = stage("postgres_connection_failed", connect_pg)
+    try:
+        stage("postgres_session_failed",
+              lambda: db.set_session(readonly=True, autocommit=False))
+        candidates = stage("postgres_candidates_failed",
+                           lambda: select_pg_candidates(db))
+        ids = [mid for mid, _ in candidates]
+        pg_rows = stage("postgres_match_rows_failed",
+                        lambda: fetch_pg(db, ids))
+    finally:
+        try:
+            db.rollback()
+        finally:
+            db.close()
 
     def query_s3():
         s3 = boto3.client(
