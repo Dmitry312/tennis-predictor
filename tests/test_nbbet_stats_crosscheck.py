@@ -67,7 +67,8 @@ def test_reconcile_dry_run_never_writes(monkeypatch):
                             match_date=date(2026, 11, 23), pbp_s3_path="pbp/example")
     stored = {("abc", 0): ("2026-11-23", row(0, first_serve_points_all_p2=10,
                                               canonical_match_id="abc"))}
-    new = SimpleNamespace(stats=[row(0, first_serve_points_all_p2=9)])
+    new = SimpleNamespace(stats=[row(0, first_serve_points_all_p2=9)],
+                          raw_page_tennis_event={"match": {"25": []}})
     writes = []
     monkeypatch.setattr(mod, "fetch_candidates", lambda *args: [match])
     monkeypatch.setattr(mod, "get_s3_client", lambda: SimpleNamespace(put_object=lambda **k: writes.append(k)))
