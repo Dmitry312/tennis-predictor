@@ -108,8 +108,14 @@ jobs:
             echo "::error::remote_sample_execution_failed"
             exit 1
           fi
-          test -s "$artifact_dir/match-sample.json"
-          test "$(wc -c < "$artifact_dir/match-sample.json")" -le 8388608
+          if [[ ! -s "$artifact_dir/match-sample.json" ]]; then
+            echo "::error::empty_sample_artifact"
+            exit 1
+          fi
+          if [[ "$(wc -c < "$artifact_dir/match-sample.json")" -gt 8388608 ]]; then
+            echo "::error::sample_artifact_over_budget"
+            exit 1
+          fi
       - name: Upload bounded sample artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
