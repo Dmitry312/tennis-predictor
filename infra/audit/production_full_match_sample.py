@@ -3,6 +3,7 @@ import json
 import os
 import re
 import sys
+from pathlib import Path
 
 
 class SampleStageError(Exception):
@@ -14,8 +15,6 @@ def stage(name, operation):
         return operation()
     except Exception:
         raise SampleStageError(name) from None
-
-from pathlib import Path
 
 FIELDS = ("POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_USER", "POSTGRES_PASSWORD",
           "POSTGRES_DB", "S3_ENDPOINT_URL", "S3_REGION", "S3_BUCKET",
