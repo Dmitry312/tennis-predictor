@@ -126,7 +126,7 @@ def related_partition_keys(pbp_s3_path):
     if not isinstance(pbp_s3_path, str):
         return None
     match = re.fullmatch(
-        r"pbp/(gender=[MF]/level=[a-z_]+/year=[0-9]{4}/part-[A-Za-z0-9_-]+\\.parquet)",
+        r"pbp/(gender=[MF]/level=[a-z_]+/year=[0-9]{4}/part-[A-Za-z0-9_-]+\.parquet)",
         pbp_s3_path,
     )
     if not match:
