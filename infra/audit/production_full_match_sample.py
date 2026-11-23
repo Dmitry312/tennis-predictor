@@ -40,9 +40,6 @@ def main():
     import boto3
     import psycopg2
     from botocore.config import Config
-    from infra.audit.full_match_export import (
-        MAX_MATCHES, build_export, fetch_pg, gather_exact_keys, select_pg_candidates,
-    )
     settings = config()
     db = psycopg2.connect(
         host=settings["POSTGRES_HOST"], port=int(settings["POSTGRES_PORT"]),
