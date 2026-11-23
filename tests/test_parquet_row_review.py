@@ -57,6 +57,7 @@ def test_details_sets_structure_does_not_expose_player_names():
     result = review.sanitize_row("nbbet_details/", row)
     assert result["sets_structure"] == {
         "kind": "list", "length": 1, "element_types": ["dict"],
+        "numeric_fields": [{}],
     }
     assert result["p1_rank"] == 10
     assert result["p2_rank"] is None
@@ -79,3 +80,17 @@ def test_bad_scores_and_non_integral_rank_are_null():
     assert review.sanitize_row("nbbet_details/", {
         "p1_rank": 12.5, "sets_json": "not-json",
     }) == {"p1_rank": None, "sets_structure": None}
+
+
+def test_sets_numeric_fields_only_no_names_or_odds():
+    raw = '[{"1":6,"2":4,"3":[7,5],"player":"SECRET","30":1.55,"4":"SECRET","5":{"1":6}},{"1":0,"2":0}]'
+    result = review.safe_sets(raw)
+    assert result["numeric_fields"] == [{"1": 6, "2": 4, "3": [7, 5]}, {"1": 0, "2": 0}]
+    assert "SECRET" not in repr(result)
+    assert "1.55" not in repr(result)
+
+
+def test_sets_reject_oversize_and_nested_sensitive_values():
+    assert review.safe_sets("x" * 4097) is None
+    assert review.safe_sets('[{"1":"PLAYER","2":[1,"PLAYER"],"3":true,"4":-1,"5":100}]')["numeric_fields"] == [{}]
+    assert review.safe_sets('[{"1":1}]' * 6) is None
