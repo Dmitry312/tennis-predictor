@@ -106,11 +106,19 @@ jobs:
             2> "$artifact_dir/sample-stage.err"; then
             echo "Read-only sample completed"
           else
-            # Remote stderr is untrusted; only an exact known diagnostic token
-            # is permitted in GitHub logs. Never print exception messages.
-            stage_code=$(head -c 160 "$artifact_dir/sample-stage.err" || true)
+            # Only the candidate-query stage has permission to emit a detailed
+            # traceback: its SQL is fixed and contains no connection credentials.
+            # Other stages remain limited to preapproved diagnostic codes.
+            if grep -qx 'sample_debug_begin' "$artifact_dir/sample-stage.err" &&
+               grep -qx 'sample_debug_end' "$artifact_dir/sample-stage.err"; then
+              echo "::group::PostgreSQL candidate query traceback"
+              sed -n '/^sample_debug_begin$/,/^sample_debug_end$/p' "$artifact_dir/sample-stage.err" | head -c 12000
+              echo
+              echo "::endgroup::"
+            fi
+            stage_code=$(tail -n 1 "$artifact_dir/sample-stage.err" | head -c 160 || true)
             case "$stage_code" in
-              sample_stage:dependency_unavailable|sample_stage:connection_config_unavailable|sample_stage:postgres_connection_failed|sample_stage:postgres_session_failed|sample_stage:postgres_candidates_failed|sample_stage:postgres_match_rows_failed|sample_stage:postgres_schema_mismatch|sample_stage:postgres_permission_denied|sample_stage:postgres_query_timeout|sample_stage:s3_partition_read_failed|sample_stage:sample_serialization_failed|sample_stage:unexpected_failure)
+              sample_stage:dependency_unavailable|sample_stage:connection_config_unavailable|sample_stage:postgres_connection_failed|sample_stage:postgres_session_failed|sample_stage:postgres_candidates_failed|sample_stage:postgres_candidates_sql_failed|sample_stage:postgres_candidates_processing_failed|sample_stage:postgres_match_rows_failed|sample_stage:postgres_schema_mismatch|sample_stage:postgres_permission_denied|sample_stage:postgres_query_timeout|sample_stage:s3_partition_read_failed|sample_stage:sample_serialization_failed|sample_stage:unexpected_failure)
                 echo "::error::$stage_code" ;;
               *) echo "::error::remote_sample_execution_failed" ;;
             esac

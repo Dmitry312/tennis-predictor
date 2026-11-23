@@ -3,6 +3,7 @@ import json
 import os
 import re
 import sys
+import traceback
 from pathlib import Path
 
 
@@ -16,7 +17,21 @@ def stage(name, operation, *, postgres=False):
     except Exception as exc:
         # SQLSTATE is a fixed protocol identifier, never exception text.
         if postgres:
+            if name == "postgres_candidates_failed":
+                # Candidate query contains no credentials; report the actual
+                # exception chain and traceback for actionable diagnosis.
+                print("sample_debug_begin", file=sys.stderr)
+                print("sample_debug_stage=postgres_candidates", file=sys.stderr)
+                traceback.print_exception(type(exc), exc, exc.__traceback__, limit=12,
+                                          file=sys.stderr)
+                print("sample_debug_end", file=sys.stderr)
             sqlstate = getattr(exc, "pgcode", None)
+            if isinstance(exc, CandidateReadError):
+                if exc.args == ("processing",):
+                    name = "postgres_candidates_processing_failed"
+                else:
+                    name = "postgres_candidates_sql_failed"
+                sqlstate = getattr(exc.__cause__, "pgcode", None)
             if sqlstate in ("42703", "42P01", "42883", "42804"):
                 name = "postgres_schema_mismatch"
             elif sqlstate == "42501":

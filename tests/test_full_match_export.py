@@ -83,3 +83,42 @@ def test_binary_fields_are_preserved_losslessly():
     result = json.loads(build_export(source, {match: {}}, match_ids=[match]))
     encoded = result["matches"][0]["s3"]["nbbet_details/"]["rows"][0]["opaque"]["binary_base64"]
     assert base64.b64decode(encoded) == binary
+
+
+def test_candidate_query_errors_are_separate_from_processing_errors():
+    import pytest
+    from infra.audit.full_match_export import CandidateReadError, select_pg_candidates
+
+    class BadMatchId:
+        def __str__(self):
+            raise TypeError("invalid match identifier")
+
+    class Cursor:
+        def __init__(self, fail_sql=False, bad_row=False):
+            self.fail_sql = fail_sql
+            self.bad_row = bad_row
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def execute(self, query, params):
+            if self.fail_sql:
+                raise RuntimeError("do not expose this SQL error")
+
+        def fetchall(self):
+            return [(BadMatchId(), "pbp/gender=M/level=tour/year=2025/part-abc-00001.parquet")] if self.bad_row else []
+
+    class Connection:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def cursor(self):
+            return Cursor(**self.kwargs)
+
+    with pytest.raises(CandidateReadError, match="^sql$"):
+        select_pg_candidates(Connection(fail_sql=True))
+    with pytest.raises(CandidateReadError, match="^processing$"):
+        select_pg_candidates(Connection(bad_row=True))
