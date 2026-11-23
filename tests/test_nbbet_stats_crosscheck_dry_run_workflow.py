@@ -7,7 +7,7 @@ def test_workflow_is_manual_pinned_and_read_only():
     path = Path(".github/workflows/production-nbbet-stats-crosscheck-dry-run.yml")
     content = path.read_text()
     data = yaml.safe_load(content)
-    assert data["on"] is None if "on" in data else data[True] is None
+    assert (data.get("on", data.get(True))) == {"workflow_dispatch": None}
     assert "schedule:" not in content
     assert " --apply" not in content
     assert "production-nbbet-stats-crosscheck-dry-run" in content
