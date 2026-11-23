@@ -43,3 +43,14 @@ def test_export_keeps_all_nested_json_and_nulls():
     record = json.loads(build_export(source, {match: {"player1": "Player One"}}))["matches"][0]
     assert record["s3"]["nbbet_details/"]["rows"][0] == raw
     assert record["postgres"]["player1"] == "Player One"
+
+
+def test_exact_partition_mapping_from_writer_layout():
+    from infra.audit.full_match_export import related_partition_keys
+    key = "pbp/gender=M/level=tour/year=2025/part-abc-00001.parquet"
+    result = related_partition_keys(key)
+    assert result["pbp/"] == key
+    assert result["nbbet_details/"] == key.replace("pbp/", "nbbet_details/")
+    assert result["nbbet_stats/"] == key.replace("pbp/", "nbbet_stats/")
+    assert related_partition_keys("../secret") is None
+    assert related_partition_keys("pbp/gender=M/level=tour/year=2025/../x.parquet") is None
