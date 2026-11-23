@@ -146,6 +146,7 @@ def reconcile(*, day, lookback, apply, max_matches, pause, deadline):
     summary = dict(candidates=len(candidates), checked=0, unchanged=0,
                    changed=0, missing_stats=0, failures=0, fields_changed=0, written=0)
     pending = []
+    consecutive_failures = 0
     for (gender, level, year), matches in sorted(groups.items()):
         stored = load_group(s3, bucket, gender, level, year, matches)
         corrections = []
@@ -166,6 +167,7 @@ def reconcile(*, day, lookback, apply, max_matches, pause, deadline):
                 fresh = [{"canonical_match_id": mid, **row} for row in parsed.stats]
                 differences = stat_differences(old, fresh)
                 summary["checked"] += 1
+                consecutive_failures = 0
                 if differences:
                     summary["changed"] += 1
                     summary["fields_changed"] += len(differences)
@@ -178,7 +180,10 @@ def reconcile(*, day, lookback, apply, max_matches, pause, deadline):
                     summary["unchanged"] += 1
             except Exception as exc:
                 summary["failures"] += 1
+                consecutive_failures += 1
                 log.warning("stats_check_failed match=%s reason=%s", mid, type(exc).__name__)
+                if consecutive_failures >= 3:
+                    raise RuntimeError("three consecutive source/check failures: stopping") from exc
             time.sleep(pause)
         if corrections:
             pending.append((gender, level, year, corrections, raw_corrections))
