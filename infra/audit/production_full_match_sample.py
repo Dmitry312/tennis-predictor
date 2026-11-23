@@ -10,10 +10,19 @@ class SampleStageError(Exception):
     """A pre-approved diagnostic code; never includes exception details."""
 
 
-def stage(name, operation):
+def stage(name, operation, *, postgres=False):
     try:
         return operation()
-    except Exception:
+    except Exception as exc:
+        # SQLSTATE is a fixed protocol identifier, never exception text.
+        if postgres:
+            sqlstate = getattr(exc, "pgcode", None)
+            if sqlstate in ("42703", "42P01", "42883", "42804"):
+                name = "postgres_schema_mismatch"
+            elif sqlstate == "42501":
+                name = "postgres_permission_denied"
+            elif sqlstate in ("57014", "55P03"):
+                name = "postgres_query_timeout"
         raise SampleStageError(name) from None
 
 FIELDS = ("POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_USER", "POSTGRES_PASSWORD",
@@ -72,10 +81,10 @@ def main():
         stage("postgres_session_failed",
               lambda: db.set_session(readonly=True, autocommit=False))
         candidates = stage("postgres_candidates_failed",
-                           lambda: select_pg_candidates(db))
+                           lambda: select_pg_candidates(db), postgres=True)
         ids = [mid for mid, _ in candidates]
         pg_rows = stage("postgres_match_rows_failed",
-                        lambda: fetch_pg(db, ids))
+                        lambda: fetch_pg(db, ids), postgres=True)
     finally:
         try:
             db.rollback()
