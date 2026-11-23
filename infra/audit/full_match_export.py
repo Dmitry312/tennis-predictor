@@ -21,7 +21,8 @@ def json_value(value):
     if isinstance(value, (dt.date, dt.datetime, uuid.UUID, decimal.Decimal)):
         return str(value)
     if isinstance(value, bytes):
-        return {"binary_bytes": len(value)}
+        import base64
+        return {"binary_base64": base64.b64encode(value).decode("ascii")}
     raise TypeError("unsupported export value")
 
 
