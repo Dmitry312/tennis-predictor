@@ -122,3 +122,29 @@ def test_candidate_query_errors_are_separate_from_processing_errors():
         select_pg_candidates(Connection(fail_sql=True))
     with pytest.raises(CandidateReadError, match="^processing$"):
         select_pg_candidates(Connection(bad_row=True))
+
+
+def test_candidate_sql_escapes_literal_percent_for_psycopg2():
+    from infra.audit.full_match_export import select_pg_candidates
+
+    class Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def execute(self, query, params):
+            assert "LIKE 'pbp/%%'" in query
+            # psycopg2-style interpolation must not treat LIKE's % as a placeholder.
+            assert query % ("%s",) == query.replace("%%", "%")
+            assert params == (48,)
+
+        def fetchall(self):
+            return []
+
+    class Connection:
+        def cursor(self):
+            return Cursor()
+
+    assert select_pg_candidates(Connection()) == []
