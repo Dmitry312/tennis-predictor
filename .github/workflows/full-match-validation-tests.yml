@@ -5,6 +5,8 @@ on:
     paths:
       - 'infra/audit/match_score_validation.py'
       - 'infra/audit/full_match_export.py'
+      - 'infra/audit/production_full_match_sample.py'
+      - '.github/workflows/production-full-match-sample.yml'
       - 'tests/test_match_score_validation.py'
       - 'tests/test_full_match_export.py'
       - '.github/workflows/full-match-validation-tests.yml'
@@ -24,6 +26,6 @@ jobs:
       - name: Install pytest
         run: python -m pip install --disable-pip-version-check pytest==8.3.5
       - name: Compile validation module
-        run: python -m py_compile infra/audit/match_score_validation.py infra/audit/full_match_export.py
+        run: python -m py_compile infra/audit/match_score_validation.py infra/audit/full_match_export.py infra/audit/production_full_match_sample.py
       - name: Test score validation
         run: python -m pytest -q tests/test_match_score_validation.py tests/test_full_match_export.py
