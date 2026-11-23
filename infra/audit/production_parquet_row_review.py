@@ -149,7 +149,7 @@ def pg_surfaces(values, identities):
     if not identities:
         return {}
     import psycopg2
-        connection = psycopg2.connect(
+    connection = psycopg2.connect(
         host=values["POSTGRES_HOST"], port=int(values["POSTGRES_PORT"]),
         user=values["POSTGRES_USER"], password=values["POSTGRES_PASSWORD"],
         dbname=values["POSTGRES_DB"], connect_timeout=3,
