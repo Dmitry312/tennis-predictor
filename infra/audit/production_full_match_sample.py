@@ -16,7 +16,7 @@ def config():
         raise ValueError("config limit")
     found = {}
     for line in raw.splitlines():
-        match = re.fullmatch(r"\\s*(?:export\\s+)?([A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*(.*?)\\s*", line)
+        match = re.fullmatch(r"\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*", line)
         if not match or match.group(1) not in FIELDS:
             continue
         key, value = match.groups()
@@ -24,7 +24,7 @@ def config():
             raise ValueError("duplicate config key")
         if value.startswith(("'", '"')) and value.endswith(value[0]):
             value = value[1:-1]
-        if not value or len(value) > 4096 or any(x in value for x in ("\\n", "\\r", "`", "$", "\\\\")):
+        if not value or len(value) > 4096 or any(x in value for x in ("\n", "\r", "`", "$", "\\")):
             raise ValueError("invalid config value")
         found[key] = value
     if any(not found.get(key) for key in FIELDS):
