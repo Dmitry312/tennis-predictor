@@ -105,7 +105,7 @@ def test_candidate_query_errors_are_separate_from_processing_errors():
                 raise RuntimeError("do not expose this SQL error")
 
         def fetchall(self):
-            return [(None, 42)] if self.bad_row else []
+            return [("00000000-0000-0000-0000-000000000001", 42)] if self.bad_row else []
 
     class Connection:
         def __init__(self, **kwargs):
