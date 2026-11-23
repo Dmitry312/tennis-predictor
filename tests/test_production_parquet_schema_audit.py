@@ -201,6 +201,52 @@ def test_schema_redaction_and_nested_metadata():
     assert report["prefixes"][1]["samples"][0]["columns"][0]["repetition_level"] == 1
 
 
+def test_output_compacts_repeated_schema_without_losing_counts():
+    sample = {
+        "fingerprint": "a" * 64,
+        "rows": 3,
+        "columns": [{"path": "point_winner", "physical": "INT64", "logical": "None",
+                     "definition_level": 1, "repetition_level": 0}] * 100,
+    }
+    report = {
+        "version": 1,
+        "semantic_verification": "pending",
+        "prefixes": [
+            {"prefix": prefix, "complete": True, "observed_keys": 1000,
+             "sampled_objects": 6, "sampled_rows": 18,
+             "fingerprints": {"a" * 64: 6}, "errors": {},
+             "samples": [dict(sample, columns=list(sample["columns"])) for _ in range(6)]}
+            for prefix in audit.PREFIXES
+        ],
+    }
+    result = json.loads(audit.encode(report))
+    assert len(audit.encode(report).encode()) <= audit.MAX_OUTPUT
+    assert all(p["complete"] and p["observed_keys"] == 1000 for p in result["prefixes"])
+    assert all(p["fingerprints"]["a" * 64] == 6 for p in result["prefixes"])
+    assert all(len(p["samples"]) == 6 for p in result["prefixes"])
+    assert all(p["samples"][1].get("columns_omitted") == "duplicate_schema"
+               for p in result["prefixes"])
+
+
+def test_output_retains_aggregates_if_all_sample_columns_too_large():
+    report = {
+        "version": 1,
+        "semantic_verification": "pending",
+        "prefixes": [
+            {"prefix": "pbp/", "complete": True, "observed_keys": 1000,
+             "fingerprints": {"f" * 64: 1},
+             "samples": [{"fingerprint": "f" * 64, "rows": 1,
+                          "columns": [{"path": "point_winner", "physical": "INT64",
+                                       "logical": "None"}] * 2500}]}
+        ],
+    }
+    result = json.loads(audit.encode(report))
+    assert len(audit.encode(report).encode()) <= audit.MAX_OUTPUT
+    assert result["prefixes"][0]["observed_keys"] == 1000
+    assert result["prefixes"][0]["complete"]
+    assert result["prefixes"][0]["samples"][0]["columns_omitted"] == "output_limit"
+
+
 def test_output_cap():
     output = audit.encode({"prefixes": [{"complete": True, "data": "x" * 40000}]})
     assert len(output.encode()) <= audit.MAX_OUTPUT
