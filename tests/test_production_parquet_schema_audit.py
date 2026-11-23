@@ -206,7 +206,7 @@ def test_output_compacts_repeated_schema_without_losing_counts():
         "fingerprint": "a" * 64,
         "rows": 3,
         "columns": [{"path": "point_winner", "physical": "INT64", "logical": "None",
-                     "definition_level": 1, "repetition_level": 0}] * 100,
+                     "definition_level": 1, "repetition_level": 0}] * 60,
     }
     report = {
         "version": 1,
