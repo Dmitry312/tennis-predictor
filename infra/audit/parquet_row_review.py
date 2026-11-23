@@ -89,6 +89,51 @@ def safe_sets(raw):
     return result
 
 
+def safe_set_shape(raw):
+    """Bounded, anonymous shape and numeric leaves for manual set review.
+
+    Object keys are never emitted: even an unexpected key could be a name.
+    Anonymous K1..K8 labels are local to each object, not stable across rows.
+    """
+    if not isinstance(raw, str) or len(raw) > 4096:
+        return None
+    try:
+        sets = json.loads(raw)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(sets, list) or len(sets) > 5:
+        return None
+
+    def visit(value, depth):
+        if type(value) is bool:
+            return {"type": "bool", "value": value}
+        if type(value) is int and 0 <= value <= 99:
+            return {"type": "int", "value": value}
+        if value is None:
+            return {"type": "null"}
+        if isinstance(value, str):
+            # Only short integer score strings can be included as values.
+            if re.fullmatch(r"(?:0|[1-9][0-9]?)", value):
+                return {"type": "numeric_string", "value": int(value)}
+            return {"type": "redacted_string"}
+        if depth >= 3:
+            return {"type": "depth_limit"}
+        if isinstance(value, list):
+            if len(value) > 8:
+                return {"type": "oversized_list"}
+            return {"type": "list", "items": [visit(x, depth + 1) for x in value]}
+        if isinstance(value, dict):
+            if len(value) > 8:
+                return {"type": "oversized_object"}
+            return {"type": "object", "fields": {
+                "K" + str(i): visit(v, depth + 1)
+                for i, v in enumerate(value.values(), 1)
+            }}
+        return {"type": "other"}
+
+    return [visit(item, 0) for item in sets]
+
+
 def sanitize_row(prefix, row):
     """Strictly allowlisted primitive evidence; never include raw match IDs."""
     if not isinstance(row, dict):
@@ -124,6 +169,7 @@ def sanitize_row(prefix, row):
                 out[name] = boolean(row[name])
         if "sets_json" in row:
             out["sets_structure"] = safe_sets(row["sets_json"])
+            out["sets_anonymous_shape"] = safe_set_shape(row["sets_json"])
         for name in ("p1_rank", "p2_rank"):
             if name in row:
                 out[name] = number(row[name], integer=True)
