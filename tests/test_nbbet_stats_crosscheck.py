@@ -190,3 +190,17 @@ def test_daily_status(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError):
         mod.run(tmp_path)
     assert "error" in crosscheck_report(day, tmp_path)
+
+
+def test_reverse_backfill(tmp_path, monkeypatch):
+    from datetime import date
+    from tennis_predictor.ingestion.nbbet import stats_crosscheck_backfill as mod
+    calls = []
+    def reconcile(**kw):
+        calls.append(kw["day"])
+        return {"checked": 1}
+    monkeypatch.setattr(mod, "reconcile", reconcile)
+    start, end = date(2025, 1, 1), date(2025, 1, 3)
+    assert not mod.run(start, end, tmp_path, max_days=1, reverse=True)
+    assert mod.run(start, end, tmp_path, max_days=2, reverse=True)
+    assert calls == [end, date(2025, 1, 2), start]
