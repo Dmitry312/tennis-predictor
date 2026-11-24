@@ -173,3 +173,20 @@ def test_backfill_resume(tmp_path, monkeypatch):
     assert calls == [(start, False), (end, False)]
     assert mod.run(start, end, tmp_path, apply=True)
     assert calls[-2:] == [(start, True), (end, True)]
+
+
+def test_daily_status(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta
+    from tennis_predictor.ingestion.nbbet import stats_crosscheck_daily as mod
+    from tennis_predictor.monitoring.daily_telegram_report import crosscheck_report
+    day = datetime.now(mod.TZ).date() - timedelta(days=1)
+    monkeypatch.setattr(mod, "reconcile", lambda **kw: {
+        "checked": 10, "changed": 2, "fields_changed": 4, "written": 0})
+    mod.run(tmp_path)
+    assert "10 проверено" in crosscheck_report(day, tmp_path)
+    def fail(**kw):
+        raise RuntimeError("failure")
+    monkeypatch.setattr(mod, "reconcile", fail)
+    with pytest.raises(RuntimeError):
+        mod.run(tmp_path)
+    assert "error" in crosscheck_report(day, tmp_path)
