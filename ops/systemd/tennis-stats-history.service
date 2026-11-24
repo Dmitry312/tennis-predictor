@@ -1,0 +1,17 @@
+[Unit]
+Description=Tennis newest-first historical statistics reconciliation
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/Tennis_pelmen_model
+Environment=PYTHONPATH=src
+ExecStart=/root/Tennis_pelmen_model/.venv/bin/python -m tennis_predictor.ingestion.nbbet.stats_crosscheck_worker --apply
+Nice=15
+IOSchedulingClass=idle
+CPUQuota=25%
+Restart=no
+
+[Install]
+WantedBy=multi-user.target
