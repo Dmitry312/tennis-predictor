@@ -143,3 +143,50 @@ def test_reconcile_apply_writes_raw_and_stats_versions(monkeypatch):
     assert writes[0]["Key"].startswith("nbbet_raw/gender=M/level=challenger/year=2026/")
     assert writes[1]["Key"].startswith("nbbet_stats/gender=M/level=challenger/year=2026/")
     assert all(w["IfNoneMatch"] == "*" for w in writes)
+
+
+def test_changed_counter_validation():
+    from tennis_predictor.ingestion.nbbet.stats_crosscheck import validate_changed_stats
+    field = "first_serve_points_all_p2"
+    changes = [(0, field, 22, 21)]
+    validate_changed_stats([row(0, **{field: 21}), row(1, **{field: 12}),
+                            row(2, **{field: 9})], changes)
+    with pytest.raises(ValueError, match="mismatch"):
+        validate_changed_stats([row(0, **{field: 22}), row(1, **{field: 12}),
+                                row(2, **{field: 9})], changes)
+    with pytest.raises(ValueError, match="invalid counter"):
+        validate_changed_stats([row(0, **{field: -1})], changes)
+
+
+def test_backfill_resume(tmp_path, monkeypatch):
+    from datetime import date
+    from tennis_predictor.ingestion.nbbet import stats_crosscheck_backfill as mod
+    calls = []
+    def reconcile(**kwargs):
+        calls.append((kwargs["day"], kwargs["apply"]))
+        return {"checked": 1}
+    monkeypatch.setattr(mod, "reconcile", reconcile)
+    start, end = date(2025, 1, 1), date(2025, 1, 2)
+    assert not mod.run(start, end, tmp_path, max_days=1)
+    assert mod.run(start, end, tmp_path, max_days=1)
+    assert mod.run(start, end, tmp_path)
+    assert calls == [(start, False), (end, False)]
+    assert mod.run(start, end, tmp_path, apply=True)
+    assert calls[-2:] == [(start, True), (end, True)]
+
+
+def test_daily_status(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta
+    from tennis_predictor.ingestion.nbbet import stats_crosscheck_daily as mod
+    from tennis_predictor.monitoring.daily_telegram_report import crosscheck_report
+    day = datetime.now(mod.TZ).date() - timedelta(days=1)
+    monkeypatch.setattr(mod, "reconcile", lambda **kw: {
+        "checked": 10, "changed": 2, "fields_changed": 4, "written": 0})
+    mod.run(tmp_path)
+    assert "10 проверено" in crosscheck_report(day, tmp_path)
+    def fail(**kw):
+        raise RuntimeError("failure")
+    monkeypatch.setattr(mod, "reconcile", fail)
+    with pytest.raises(RuntimeError):
+        mod.run(tmp_path)
+    assert "error" in crosscheck_report(day, tmp_path)
