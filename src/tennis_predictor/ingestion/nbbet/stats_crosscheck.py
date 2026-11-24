@@ -63,6 +63,27 @@ def stat_differences(old_rows, new_rows):
     return changes
 
 
+def validate_changed_stats(rows, differences):
+    """Reject inconsistent changed additive counters when all scopes are present."""
+    by_scope = {int(row["scope"]): stat_projection(row) for row in rows}
+    sets = sorted(scope for scope in by_scope if scope > 0)
+    additive = ("aces", "double_faults", "first_serve_points_all",
+                "first_serve_points_won", "second_serve_points_all",
+                "second_serve_points_won")
+    for field in {change[1] for change in differences}:
+        if field.rsplit("_p", 1)[0] not in additive:
+            continue
+        values = [row[field] for row in by_scope.values()]
+        if any(v is not None and (not isinstance(v, (int, float)) or
+                                  v < 0 or not float(v).is_integer()) for v in values):
+            raise ValueError(f"invalid counter: {field}")
+        if 0 in by_scope and sets and sets == list(range(1, max(sets) + 1)):
+            total = by_scope[0][field]
+            parts = [by_scope[scope][field] for scope in sets]
+            if total is not None and all(v is not None for v in parts) and total != sum(parts):
+                raise ValueError(f"match/set counter mismatch: {field}")
+
+
 def list_keys(s3, bucket, prefix):
     keys = []
     paginator = s3.get_paginator("list_objects_v2")
@@ -170,6 +191,7 @@ def reconcile(*, day, lookback, apply, max_matches, pause, deadline):
                 summary["checked"] += 1
                 consecutive_failures = 0
                 if differences:
+                    validate_changed_stats(fresh, differences)
                     summary["changed"] += 1
                     summary["fields_changed"] += len(differences)
                     log.info("stats_changed match=%s fields=%d", mid, len(differences))
