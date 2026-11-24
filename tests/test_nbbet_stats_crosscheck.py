@@ -143,3 +143,16 @@ def test_reconcile_apply_writes_raw_and_stats_versions(monkeypatch):
     assert writes[0]["Key"].startswith("nbbet_raw/gender=M/level=challenger/year=2026/")
     assert writes[1]["Key"].startswith("nbbet_stats/gender=M/level=challenger/year=2026/")
     assert all(w["IfNoneMatch"] == "*" for w in writes)
+
+
+def test_changed_counter_validation():
+    from tennis_predictor.ingestion.nbbet.stats_crosscheck import validate_changed_stats
+    field = "first_serve_points_all_p2"
+    changes = [(0, field, 22, 21)]
+    validate_changed_stats([row(0, **{field: 21}), row(1, **{field: 12}),
+                            row(2, **{field: 9})], changes)
+    with pytest.raises(ValueError, match="mismatch"):
+        validate_changed_stats([row(0, **{field: 22}), row(1, **{field: 12}),
+                                row(2, **{field: 9})], changes)
+    with pytest.raises(ValueError, match="invalid counter"):
+        validate_changed_stats([row(0, **{field: -1})], changes)
