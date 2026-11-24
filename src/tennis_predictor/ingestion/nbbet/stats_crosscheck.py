@@ -135,9 +135,11 @@ def load_group(s3, bucket, gender, level, year, matches):
                    [k for k in keys if "-crosscheck-" in k] + list(original))
     if not needs_discovery:
         selected |= original
+    wanted = {str(m.match_id) for m in matches}
     rows = []
     for key in sorted(selected):
-        rows.extend(read_rows(s3, bucket, key))
+        rows.extend(row for row in read_rows(s3, bucket, key)
+                    if str(row['canonical_match_id']) in wanted)
     return latest_rows(rows)
 
 
@@ -171,13 +173,16 @@ def reconcile(*, day, lookback, apply, max_matches, pause, deadline):
     consecutive_failures = 0
     for (gender, level, year), matches in sorted(groups.items()):
         stored = load_group(s3, bucket, gender, level, year, matches)
+        by_match = defaultdict(list)
+        for (mid, _), (_, row) in stored.items():
+            by_match[mid].append(row)
         corrections = []
         raw_corrections = []
         for m in matches:
             if time.monotonic() >= deadline:
                 raise TimeoutError("crosscheck deadline exceeded before 11:00")
             mid = str(m.match_id)
-            old = [v[1] for (id_, _), v in stored.items() if id_ == mid]
+            old = by_match[mid]
             if not old:
                 summary["missing_stats"] += 1
                 continue
