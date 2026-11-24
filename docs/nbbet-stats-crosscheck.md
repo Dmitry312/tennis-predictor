@@ -24,3 +24,22 @@ The existing 11:00 Europe/Moscow health summary must remain untouched. On a conf
     5 7 * * * cd /root/Tennis_pelmen_model && flock -n /tmp/nbbet_stats_crosscheck.lock env PYTHONPATH=src /root/Tennis_pelmen_model/.venv/bin/python -m tennis_predictor.ingestion.nbbet.stats_crosscheck --apply >> /var/log/ingestion/nbbet_stats_crosscheck.log 2>&1
 
 The default 40-minute deadline leaves 15 minutes before the 11:00 job. If it fails, alerting/health integration must flag crosscheck as failed; this PR does not alter the existing health job. Daily full-history rescans cannot be guaranteed within this window: historical backfill needs a separate bounded job.
+
+## Daily status and historical audit
+
+Use stats_crosscheck_daily instead of the bare CLI for scheduled runs. It writes
+an atomic dated status JSON consumed by the existing Telegram report, including
+running/error/success and dry-run/apply mode. Schedule only after approval.
+Use the same flock lock for daily and historical jobs; never run them concurrently.
+
+Historical audit (example dates, adjust to verified coverage):
+
+    flock -n /tmp/nbbet_stats_crosscheck.lock env PYTHONPATH=src .venv/bin/python -m tennis_predictor.ingestion.nbbet.stats_crosscheck_backfill --start 2025-01-01 --end 2026-11-23 --state-dir /var/lib/tennis-stats-history --max-days 7
+
+Repeat until complete. Each successful date has a separate atomic JSON marker;
+failed dates stop the batch. Apply markers are separate from audit markers.
+Do not enable --apply until audit coverage, source request budget, and downstream
+version selection are verified and production writes approved. A daily batch
+can exceed the match budget; adjust explicitly rather than silently truncating.
+Historical corrections reflect current source knowledge, not necessarily what
+was available on the historical prediction date. Preserve original versions.
