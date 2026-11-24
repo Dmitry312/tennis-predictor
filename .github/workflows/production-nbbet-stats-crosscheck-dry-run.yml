@@ -2,6 +2,16 @@ name: Manual NBBet statistics crosscheck (read-only dry-run)
 
 on:
   workflow_dispatch:
+    inputs:
+      end_date:
+        description: 'End date YYYY-MM-DD (blank = yesterday Moscow)'
+        required: false
+        type: string
+      lookback_days:
+        description: 'Number of dates to audit (1–30)'
+        required: true
+        default: '1'
+        type: string
 
 permissions:
   contents: read
@@ -47,12 +57,24 @@ jobs:
       - name: Verify ED25519 host key and run read-only crosscheck
         shell: bash
         env:
+          AUDIT_DATE: ${{ inputs.end_date }}
+          AUDIT_DAYS: ${{ inputs.lookback_days }}
           SSH_HOST: ${{ secrets.SERVER_HOST }}
           SSH_USER: ${{ secrets.SERVER_USER }}
           SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
           SSH_FINGERPRINT: ${{ secrets.SERVER_HOST_FINGERPRINT }}
         run: |
           set -euo pipefail
+          audit_date="$AUDIT_DATE"
+          audit_days="$AUDIT_DAYS"
+          if [[ -n "$audit_date" && ! "$audit_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+            exit 1
+          fi
+          if [[ ! "$audit_days" =~ ^([1-9]|[12][0-9]|30)$ ]]; then
+            exit 1
+          fi
+          date_arg=""
+          if [[ -n "$audit_date" ]]; then date_arg="--date $audit_date"; fi
           umask 077
           ssh_dir=$(mktemp -d "$RUNNER_TEMP/ssh-auth.XXXXXX")
           trap 'rm -rf -- "$ssh_dir"' EXIT
@@ -100,7 +122,7 @@ jobs:
             -o KbdInteractiveAuthentication=no -o ForwardAgent=no \
             -o ClearAllForwardings=yes -i "$ssh_dir/key" \
             -l "$SSH_USER" -- "$SSH_HOST" \
-            'cd /root/Tennis_pelmen_model && timeout --kill-after=5s 2400s env PYTHONPATH=src .venv/bin/python -B - --lookback-days 1 --max-matches 300 --max-minutes 38' \
+            "cd /root/Tennis_pelmen_model && timeout --kill-after=5s 2400s env PYTHONPATH=src .venv/bin/python -B - --lookback-days $audit_days --max-matches 300 --max-minutes 38 $date_arg" \
             < <(cat src/tennis_predictor/ingestion/nbbet/stats_crosscheck.py) \
             > "$artifact_dir/stats-crosscheck-summary.json" \
             2> "$artifact_dir/crosscheck-stage.err"; then
