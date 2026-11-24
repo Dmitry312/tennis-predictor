@@ -75,6 +75,20 @@ def health_snapshot():
     return "\n".join(lines)
 
 
+def crosscheck_report(day, state_dir="/var/lib/tennis-stats-crosscheck"):
+    try:
+        data = json.loads((Path(state_dir) / f"{day}.json").read_text(encoding="utf-8"))
+        if data["status"] != "success":
+            return "Сверка статистики: " + data["status"]
+        summary = data["summary"]
+        return (f"Сверка статистики (3 дня): {summary['checked']} проверено, "
+                f"{summary['changed']} изменено, {summary['fields_changed']} полей, "
+                f"{summary['written']} строк записано; "
+                + ("apply" if data["apply"] else "dry-run"))
+    except (OSError, ValueError, KeyError, TypeError):
+        return "Сверка статистики: нет подтверждённого отчёта"
+
+
 def make_report(day):
     rows = match_rows(day)
     n = len(rows)
@@ -96,7 +110,7 @@ def make_report(day):
         f"Без pBp: {n - pbp}; без деталей: {n - details}; "
         f"без покрытия: {n - surface}\n"
         "ℹ️ Пропуски источника не приравниваются к ошибкам парсера.\n\n"
-        + health_snapshot()
+        + health_snapshot() + "\n" + crosscheck_report(day)
     )
 
 
