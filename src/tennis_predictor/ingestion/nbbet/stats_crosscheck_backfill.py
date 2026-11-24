@@ -36,9 +36,14 @@ def main():
     p.add_argument("--state-dir", required=True)
     p.add_argument("--max-days", type=int, default=7)
     p.add_argument("--apply", action="store_true")
+    p.add_argument('--max-matches', type=int, default=300)
+    p.add_argument('--pause', type=float, default=1.0)
     args = p.parse_args()
+    if not 1 <= args.max_matches <= 5000:
+        p.error('invalid match budget')
     print("complete:", run(args.start, args.end, args.state_dir,
-                           apply=args.apply, max_days=args.max_days))
+                           apply=args.apply, max_days=args.max_days,
+                           max_matches=args.max_matches, pause=args.pause))
 
 
 if __name__ == "__main__":
