@@ -156,3 +156,20 @@ def test_changed_counter_validation():
                                 row(2, **{field: 9})], changes)
     with pytest.raises(ValueError, match="invalid counter"):
         validate_changed_stats([row(0, **{field: -1})], changes)
+
+
+def test_backfill_resume(tmp_path, monkeypatch):
+    from datetime import date
+    from tennis_predictor.ingestion.nbbet import stats_crosscheck_backfill as mod
+    calls = []
+    def reconcile(**kwargs):
+        calls.append((kwargs["day"], kwargs["apply"]))
+        return {"checked": 1}
+    monkeypatch.setattr(mod, "reconcile", reconcile)
+    start, end = date(2025, 1, 1), date(2025, 1, 2)
+    assert not mod.run(start, end, tmp_path, max_days=1)
+    assert mod.run(start, end, tmp_path, max_days=1)
+    assert mod.run(start, end, tmp_path)
+    assert calls == [(start, False), (end, False)]
+    assert mod.run(start, end, tmp_path, apply=True)
+    assert calls[-2:] == [(start, True), (end, True)]
