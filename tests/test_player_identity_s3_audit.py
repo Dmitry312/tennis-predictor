@@ -227,8 +227,9 @@ def test_read_timeout_closes_stream():
             return result
     key = "nbbet_details/gender=M/level=tour/year=2020/a.parquet"
     f = TimeoutFake({key: fixture()})
-    with pytest.raises(TimeoutError):
+    with pytest.raises(a.Diagnostic) as caught:
         a.Reader(f, "bucket").get({"Key": key, "Size": len(f.objects[key]), "ETag": "tag"})
+    assert caught.value.stage == "get" and caught.value.reason == "timeout"
     assert f.bodies[-1].closed
 
 
