@@ -237,6 +237,8 @@ def run(request, project, reviewed_sha):
     import os
     import importlib.metadata
     e.need(os.geteuid() != 0,"nonroot_required")
+    os.environ["OPENBLAS_NUM_THREADS"]="1"
+    os.environ["OMP_NUM_THREADS"]="1"
     e.need(sys.version_info >= (3,11),"python_version")
     # Import dependencies only; never import storage.db or ingestion jobs.
     runtime = {"python":".".join(map(str,sys.version_info[:3])),"packages":{}}

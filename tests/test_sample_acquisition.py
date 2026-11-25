@@ -16,7 +16,7 @@ from scripts import export_match_samples as e
 from scripts import sample_delivery as d
 from scripts import build_sample_acquisition_payload as b
 from infra.audit import sample_acquisition_bootstrap as bootstrap
-from test_export_match_samples import PG, S3, parquet, SPORT
+from tests.test_export_match_samples import PG, S3, parquet, SPORT
 
 SHA = "a"*40
 PATH = "pbp/gender=M/level=tour/year=2026/part-fixture.parquet"
