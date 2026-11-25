@@ -44,7 +44,8 @@ def seal(source, destination, cert, fingerprint):
     with tempfile.TemporaryDirectory(prefix="sealed-match-sample-") as tmp:
         target = Path(tmp)/"sample.cms"
         result = subprocess.run(["openssl","cms","-encrypt","-aes-256-gcm","-binary",
-            "-outform","DER","-recip",str(cert),"-out",str(target)],
+            "-outform","DER","-recip",str(cert),"-keyopt","rsa_padding_mode:oaep",
+            "-keyopt","rsa_oaep_md:sha256","-out",str(target)],
             input=data,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=30)
         need(result.returncode == 0 and 0 < target.stat().st_size <= LIMIT+65536)
         destination = Path(destination)

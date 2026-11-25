@@ -159,7 +159,7 @@ These supplement, rather than remove, the exporter hard ceilings.
 Raw sample bytes pass through SSH stdout directly into the sealer's bounded memory.
 They are never printed or persisted as a plaintext Actions artifact/file. The runner
 uploads only samples.cms, standard authenticated CMS AuthEnvelopedData using
-AES-256-GCM and the pinned RSA recipient certificate. A 1-day retention limit is
+AES-256-GCM and RSA-OAEP/SHA-256 key transport to the pinned recipient certificate. A 1-day retention limit is
 additional minimization, not a confidentiality boundary: public-repository artifacts
 can be downloadable by users with repository read access. Encryption is mandatory;
 there is no plaintext fallback. Package sizes and run metadata remain visible.

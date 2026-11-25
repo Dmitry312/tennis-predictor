@@ -271,3 +271,33 @@ def test_reviewed_import_preserves_hashes_and_synthetic_index(tmp_path,recipient
     assert after["entries"]==[{"origin":"synthetic","path":"examples.synthetic.json"}]
     assert after["real_examples"]==before["real_examples"]
     assert len(e.reuse(target))==2
+
+
+def test_global_source_manifest_is_restricted_to_resumed_batch(tmp_path):
+    plan=a.choose(*a.candidate_pool(CandidatePG()))
+    supplement={"manifest_version":1,"matches":{key:{"pbp":[]} for key in plan["selected_ids"]}}
+    _,report=a.acquire(CandidatePG(),S3(objects(plan["selected_ids"])),"fixture.bucket",
+        tmp_path,plan=plan,offset=2,batch_size=2,supplemental=supplement)
+    assert report["exported_count"]==2
+    assert all(not v["records"]["pbp.json"]["versions"] for v in e.reuse(tmp_path).values())
+
+
+def test_resume_scope_change_rejected_before_s3(tmp_path):
+    plan=a.choose(*a.candidate_pool(CandidatePG()))
+    db=CandidatePG()
+    db.rows[plan["selected_ids"][0]]["level"]="itf"
+    client=S3({})
+    with pytest.raises(e.ExportError,match="selected_scope_changed"):
+        a.acquire(db,client,"fixture.bucket",tmp_path/"output",plan=plan)
+    assert not client.calls and not (tmp_path/"output").exists()
+
+
+def test_seal_bounds_input_before_creating_ciphertext(tmp_path,recipient,monkeypatch):
+    cert,_,fingerprint=recipient
+    monkeypatch.setattr(d,"LIMIT",16)
+    class Input:
+        def read(self,n):
+            assert n==17
+            return b"x"*17
+    with pytest.raises(ValueError): d.seal(Input(),tmp_path/"x.cms",cert,fingerprint)
+    assert not (tmp_path/"x.cms").exists()
