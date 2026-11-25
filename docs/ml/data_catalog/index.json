@@ -1,0 +1,16 @@
+{
+  "catalog_version": 1,
+  "projection_policy": "linked-sanitized-v1",
+  "publication_status": "synthetic_only_no_real_samples_approved",
+  "entries": [
+    {
+      "path": "examples.synthetic.json",
+      "origin": "synthetic",
+      "review_state": "illustrative_not_production_evidence",
+      "dictionary": "dictionary.md",
+      "allowlist": "allowlist.md",
+      "production_source": null
+    }
+  ],
+  "real_examples": []
+}
