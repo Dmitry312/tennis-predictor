@@ -250,7 +250,8 @@ def test_workflow_guardrails_and_shell_syntax():
     assert '!= root' in ssh and "ALLOW_EXISTING_ROOT" in ssh
     assert "actions/upload-artifact@" not in text and "RECIPIENT_CERT" not in text
     assert wf["jobs"]["acquire"]["permissions"]=={"contents":"read"}
-    assert wf["jobs"]["publish"]["permissions"]=={"contents":"write","pull-requests":"write"}
+    publication=yaml.load((ROOT/".github/workflows/publish-reviewed-match-samples.yml").read_text(),Loader=yaml.BaseLoader)
+    assert publication["jobs"]["publish"]["permissions"]=={"contents":"write","pull-requests":"write"}
     assert "git push" not in text and "sample-stage.err" not in text
     for step in job["steps"]:
         if "uses" in step: assert len(step["uses"].split("@")[1])==40

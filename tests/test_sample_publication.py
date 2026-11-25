@@ -181,10 +181,11 @@ def test_workflow_token_isolation_and_optional_crypto():
     workflow=yaml.load(text,Loader=yaml.BaseLoader)
     assert set(workflow["on"])=={"workflow_dispatch"}
     assert "cryptography" not in text and "RECIPIENT" not in text and "upload-artifact" not in text
-    acquire=workflow["jobs"]["acquire"]; publish=workflow["jobs"]["publish"]
+    publication=yaml.load((ROOT/".github/workflows/publish-reviewed-match-samples.yml").read_text(),Loader=yaml.BaseLoader)
+    acquire=workflow["jobs"]["acquire"]; publish=publication["jobs"]["publish"]
     assert acquire["permissions"]=={"contents":"read"}
     assert "inputs.operation == 'stage'" in acquire["if"]
-    assert "inputs.operation == 'publish'" in publish["if"]
+    assert "refs/heads/ML" in publish["if"] and "workflow_dispatch" in publish["if"]
     for step in acquire["steps"]:
         assert "GH_TOKEN" not in step.get("env",{})
     writer=next(step for step in publish["steps"] if "GH_TOKEN" in step.get("env",{}))
@@ -196,7 +197,10 @@ def test_workflow_token_isolation_and_optional_crypto():
     ssh=(ROOT/"infra/audit/sample_ssh.sh").read_text()
     assert "StrictHostKeyChecking=yes" in ssh and "unset GH_TOKEN GITHUB_TOKEN" in ssh
     subprocess.run(["bash","-n"],input=ssh,text=True,check=True)
-    for job in workflow["jobs"].values():
+    for filename in ("production-match-sample-acquisition.yml","publish-reviewed-match-samples.yml","protected-match-sample-fallback.yml"):
+        manual=yaml.load((ROOT/".github/workflows"/filename).read_text(),Loader=yaml.BaseLoader)
+        assert len(manual["on"]["workflow_dispatch"]["inputs"])<=10
+    for job in list(workflow["jobs"].values())+list(publication["jobs"].values()):
         for step in job["steps"]:
             if "run" in step: subprocess.run(["bash","-n"],input=step["run"],text=True,check=True)
 

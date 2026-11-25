@@ -1,12 +1,11 @@
-name: Reviewed sample staging and automatic PR
+name: Private reviewed match sample staging
 on:
   workflow_dispatch:
     inputs:
       operation:
         type: choice
-        options: [stage, publish, cleanup]
+        options: [stage, cleanup]
         default: stage
-        description: Stage privately, publish reviewed JSON, or remove private staging
       reviewed_sha:
         type: string
         required: true
@@ -30,31 +29,11 @@ on:
       stage_ticket:
         type: string
         default: ''
-        description: gh-RUN_ID-ATTEMPT from staging summary, for publish/cleanup
-      stage_digest:
-        type: string
-        default: ''
-        description: SHA-256 of exact staged bytes inspected before publication
-      content_reviewed:
-        type: boolean
-        default: false
-        description: Actual staged JSON inspected via existing secure access
-      rights_reviewed:
-        type: boolean
-        default: false
-        description: Source redistribution rights checked for this actual batch
-      content_evidence:
-        type: string
-        default: ''
-        description: Review reference only; no sample values or secrets
-      rights_evidence:
-        type: string
-        default: ''
-        description: Source terms/review reference only
+        description: Required only for cleanup
       allow_existing_root:
         type: boolean
         default: false
-        description: Explicitly reuse existing root runtime when necessary; never grant new rights
+        description: Reuse existing root runtime only if necessary and reviewed
 permissions:
   contents: read
 concurrency:
@@ -94,51 +73,6 @@ jobs:
           SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
           SSH_FINGERPRINT: ${{ secrets.SERVER_HOST_FINGERPRINT }}
         run: bash infra/audit/sample_ssh.sh
-  publish:
-    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/ML' && inputs.operation == 'publish' }}
-    environment: match-sample-review
-    permissions:
-      contents: write
-      pull-requests: write
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    env:
-      STAGE_TICKET: ${{ inputs.stage_ticket }}
-      STAGE_DIGEST: ${{ inputs.stage_digest }}
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
-        with:
-          python-version: '3.11'
-      - name: Validate explicit prepublication review and fetch only reviewed stage
-        env:
-          SAMPLE_ARCHIVE: ${{ runner.temp }}/reviewed-sample.zip
-          REVIEW_FILE: ${{ runner.temp }}/sample-review.json
-          OPERATION: release
-          CONTENT_REVIEWED: ${{ inputs.content_reviewed }}
-          RIGHTS_REVIEWED: ${{ inputs.rights_reviewed }}
-          CONTENT_EVIDENCE: ${{ inputs.content_evidence }}
-          RIGHTS_EVIDENCE: ${{ inputs.rights_evidence }}
-          SSH_HOST: ${{ secrets.SERVER_HOST }}
-          SSH_USER: ${{ secrets.SERVER_USER }}
-          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
-          SSH_FINGERPRINT: ${{ secrets.SERVER_HOST_FINGERPRINT }}
-        run: bash infra/audit/sample_ssh.sh
-      - name: Revalidate and create dedicated samples branch and PR into ML
-        env:
-          SAMPLE_ARCHIVE: ${{ runner.temp }}/reviewed-sample.zip
-          REVIEW_FILE: ${{ runner.temp }}/sample-review.json
-          GH_TOKEN: ${{ github.token }}
-        run: python scripts/publish_match_samples.py
-      - name: Clean private runner files
-        env:
-          SAMPLE_ARCHIVE: ${{ runner.temp }}/reviewed-sample.zip
-          REVIEW_FILE: ${{ runner.temp }}/sample-review.json
-        if: ${{ always() }}
-        shell: bash
-        run: rm -f -- "$SAMPLE_ARCHIVE" "$REVIEW_FILE"
   cleanup:
     if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/ML' && inputs.operation == 'cleanup' }}
     environment: match-sample-review

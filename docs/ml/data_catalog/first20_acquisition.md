@@ -29,7 +29,7 @@ upload or sample-branch creation, not after opening a public PR.
    SHA-256. A hash or generic Environment approval alone is NOT content inspection.
    The reviewer needs already-authorized access to these private files; do not
    print them through Actions, publish them as an artifact or change permissions.
-3. Run the same workflow with operation=publish, ticket, exact inspected digest,
+3. Run publish-reviewed-match-samples.yml on ML with ticket, exact inspected digest,
    content_reviewed=true, rights_reviewed=true and two nonempty review references.
    Supply references only, not source content or secrets: dispatch inputs themselves
    are visible to repository readers. The reviewed SHA must match the stage's source
@@ -51,7 +51,8 @@ upload or sample-branch creation, not after opening a public PR.
    Runner ZIP/review files are deleted on success/failure. Failed publication leaves
    the private stage for diagnosis/retry; it does not quietly publish unreviewed data.
 
-No automatic source access or sample publication occurs when this implementation PR
+Staging and publication are separate workflows (9 and 8 inputs, within GitHub's
+10-input limit), with separate read/write jobs. No automatic source access or sample publication occurs when this implementation PR
 is updated. A human can attest a completed review; software cannot prove that a person
 read the data or that a legal interpretation is correct. The protected Environment
 and truthful digest-bound attestations are mandatory operational controls.
