@@ -83,6 +83,14 @@ jobs:
           REVIEW_FILE: ${{ runner.temp }}/sample-review.json
           GH_TOKEN: ${{ github.token }}
         run: python scripts/publish_match_samples.py
+      - name: Remove published private stage
+        env:
+          OPERATION: cleanup
+          SSH_HOST: ${{ secrets.SERVER_HOST }}
+          SSH_USER: ${{ secrets.SERVER_USER }}
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SSH_FINGERPRINT: ${{ secrets.SERVER_HOST_FINGERPRINT }}
+        run: bash infra/audit/sample_ssh.sh
       - name: Clean private runner files
         env:
           SAMPLE_ARCHIVE: ${{ runner.temp }}/reviewed-sample.zip

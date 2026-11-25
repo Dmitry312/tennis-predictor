@@ -46,7 +46,8 @@ upload or sample-branch creation, not after opening a public PR.
    whose temporary key is deleted on exit. There is no automatic merge.
 5. Check the generated PR, including original JSON, selection plan and review receipt.
    Source samples, plan and receipt are ordinary reviewed Git files, not artifacts.
-   Once delivered, run operation=cleanup with the ticket to remove the server stage.
+   After PR creation the workflow automatically removes the server stage. If that
+   cleanup fails, use operation=cleanup with the ticket in the staging workflow.
    Cleanup never touches production services, data tables, S3 or unrelated directories.
    Runner ZIP/review files are deleted on success/failure. Failed publication leaves
    the private stage for diagnosis/retry; it does not quietly publish unreviewed data.
@@ -154,7 +155,10 @@ Failed acquisition must not leave publicly discoverable source rows.
   then executed against ML. No default-branch merge/change is performed here.
 - Repository policy must allow GITHUB_TOKEN to create PRs. Only the publication
   job requests existing GitHub contents/PR write scopes; acquisition remains read
-  only. No new PAT, App key, recipient certificate or GitHub secret is required.
+  only. GITHUB_TOKEN-created PRs generally do not trigger pull_request workflows:
+  all publication validators run before upload; maintainers must arrange any separately
+  required PR checks through their existing trusted process, without silently adding
+  an elevated PAT or App credential. No new PAT, App key, recipient certificate or GitHub secret is required.
   If repo/org policy forbids PR creation, report the policy blocker; do not silently
   acquire an elevated token or weaken policy.
 - All JSON is staged/validated locally before GitHub writes, and all review/source
