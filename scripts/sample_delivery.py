@@ -66,7 +66,15 @@ def unpack(source, destination, private_key):
             stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=30)
         # OpenSSL may write bytes before authentication fails; never extract those.
         need(result.returncode==0 and clear.stat().st_size <= LIMIT)
-        with zipfile.ZipFile(clear) as z:
+        unpack_archive(clear.read_bytes(),destination)
+
+
+def unpack_archive(data, destination):
+    """Private transport validation shared by SSH staging and optional CMS fallback."""
+    destination = Path(destination)
+    need(len(data)<=LIMIT and not destination.exists())
+    with tempfile.TemporaryDirectory(prefix="verified-match-package-") as tmp:
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
             entries = z.infolist()
             need(0 < len(entries) <= 150)
             names = [v.filename for v in entries]

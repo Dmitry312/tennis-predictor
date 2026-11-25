@@ -1,40 +1,76 @@
-name: Manual reviewed first-20 match samples
+name: Reviewed sample staging and automatic PR
 on:
   workflow_dispatch:
     inputs:
+      operation:
+        type: choice
+        options: [stage, publish, cleanup]
+        default: stage
+        description: Stage privately, publish reviewed JSON, or remove private staging
       reviewed_sha:
-        description: 'Exact reviewed ML commit SHA'
         type: string
         required: true
+        description: Exact reviewed ML SHA
       batch_offset:
-        description: 'Offset in the reviewed first-20 plan; first run must be 0'
         type: string
         default: '0'
       batch_size:
-        description: 'Conservative first batch 2; maximum 5'
         type: string
         default: '2'
+        description: Initial 2, maximum 5
       selection_plan:
-        description: 'Reviewed docs/ml/data_catalog/*.json plan; required for offset > 0'
         type: string
         default: ''
       source_manifest:
-        description: 'Optional reviewed exact object/version manifest under docs/ml/data_catalog/'
         type: string
         default: ''
       after_uuid:
-        description: 'Optional bounded-pool PK cursor; discovery only'
         type: string
         default: ''
+      stage_ticket:
+        type: string
+        default: ''
+        description: gh-RUN_ID-ATTEMPT from staging summary, for publish/cleanup
+      stage_digest:
+        type: string
+        default: ''
+        description: SHA-256 of exact staged bytes inspected before publication
+      content_reviewed:
+        type: boolean
+        default: false
+        description: Actual staged JSON inspected via existing secure access
+      rights_reviewed:
+        type: boolean
+        default: false
+        description: Source redistribution rights checked for this actual batch
+      content_evidence:
+        type: string
+        default: ''
+        description: Review reference only; no sample values or secrets
+      rights_evidence:
+        type: string
+        default: ''
+        description: Source terms/review reference only
+      allow_existing_root:
+        type: boolean
+        default: false
+        description: Explicitly reuse existing root runtime when necessary; never grant new rights
 permissions:
   contents: read
 concurrency:
   group: production-match-sample-acquisition
   cancel-in-progress: false
+env:
+  REVIEWED_SHA: ${{ inputs.reviewed_sha }}
+  SELECTED_SHA: ${{ github.sha }}
+  PROJECT_PATH: ${{ vars.SAMPLES_PROJECT_PATH || '/root/Tennis_pelmen_model' }}
+  ALLOW_EXISTING_ROOT: ${{ inputs.allow_existing_root }}
 jobs:
   acquire:
-    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/ML' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/ML' && inputs.operation == 'stage' }}
     environment: match-sample-review
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -44,81 +80,85 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: '3.11'
-      - name: Install runner certificate parser only
-        run: python -m pip install cryptography==44.0.3
-      - name: Validate reviewed inputs, encrypt delivery and read only over pinned SSH
-        shell: bash
+      - name: Stage bounded JSON privately with existing SSH
         env:
-          REVIEWED_SHA: ${{ inputs.reviewed_sha }}
-          SELECTED_SHA: ${{ github.sha }}
-          SSH_HOST: ${{ secrets.SERVER_HOST }}
-          SSH_USER: ${{ secrets.SERVER_USER }}
-          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
-          SSH_FINGERPRINT: ${{ secrets.SERVER_HOST_FINGERPRINT }}
-          PROJECT_PATH: ${{ vars.SAMPLES_PROJECT_PATH }}
-          RECIPIENT_CERT: ${{ vars.SAMPLES_REVIEW_CERT_PEM }}
-          RECIPIENT_FINGERPRINT: ${{ vars.SAMPLES_REVIEW_CERT_SHA256 }}
+          OPERATION: stage
+          STAGE_TICKET: gh-${{ github.run_id }}-${{ github.run_attempt }}
           BATCH_OFFSET: ${{ inputs.batch_offset }}
           BATCH_SIZE: ${{ inputs.batch_size }}
           PLAN_PATH: ${{ inputs.selection_plan }}
           MANIFEST_PATH: ${{ inputs.source_manifest }}
           AFTER_UUID: ${{ inputs.after_uuid }}
-          AWS_EC2_METADATA_DISABLED: 'true'
-          OPENBLAS_NUM_THREADS: '1'
-        run: |
-          set -euo pipefail
-          umask 077
-          fail() { echo "::error::sample_acquisition_failed"; exit 1; }
-          [[ "$REVIEWED_SHA" =~ ^[a-f0-9]{40}$ && "$REVIEWED_SHA" == "$SELECTED_SHA" ]] || fail
-          [[ "$SSH_HOST" =~ ^[A-Za-z0-9][A-Za-z0-9.-]*$ ]] || fail
-          [[ "$SSH_USER" =~ ^[a-z_][a-z0-9_-]*$ && "$SSH_USER" != root && -n "$SSH_KEY" ]] || fail
-          [[ "$SSH_FINGERPRINT" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]] || fail
-          [[ "$BATCH_OFFSET" =~ ^([0-9]|1[0-9])$ && "$BATCH_SIZE" =~ ^[1-5]$ ]] || fail
-          [[ "$PROJECT_PATH" =~ ^/[A-Za-z0-9_./-]{1,200}$ ]] || fail
-          work=$(mktemp -d "$RUNNER_TEMP/reviewed-samples.XXXXXX")
-          trap 'rm -rf -- "$work"' EXIT
-          printf '%s\n' "$RECIPIENT_CERT" > "$work/recipient.pem"
-          python scripts/sample_delivery.py verify --certificate "$work/recipient.pem" \
-            --fingerprint "$RECIPIENT_FINGERPRINT" >/dev/null 2>/dev/null || fail
-          # Validate paths and prepare exact reviewed code before any SSH connection.
-          python scripts/build_sample_acquisition_payload.py --project "$PROJECT_PATH" \
-            --sha "$SELECTED_SHA" --offset "$BATCH_OFFSET" --batch-size "$BATCH_SIZE" \
-            --plan-path "$PLAN_PATH" --manifest-path "$MANIFEST_PATH" --after "$AFTER_UUID" \
-            > "$work/request.py" 2>/dev/null || fail
-          timeout 15s ssh-keyscan -T 10 -p 22 -t ed25519 -- "$SSH_HOST" \
-            > "$work/candidate" 2>/dev/null || fail
-          awk 'NF == 3 && $2 == "ssh-ed25519" { print; count++ }
-               END { if (count != 1) exit 1 }' "$work/candidate" > "$work/known_hosts" || fail
-          actual=$(ssh-keygen -lf "$work/known_hosts" -E sha256 2>/dev/null | awk '{print $2}')
-          [[ "$actual" == "$SSH_FINGERPRINT" ]] || fail
-          printf '%s\n' "$SSH_KEY" > "$work/key"
-          # Input values never become shell source; project path was strictly validated.
-          # Deployed Python supplies dependencies; reviewed scripts execute from private /tmp.
-          remote="cd '$PROJECT_PATH' && timeout --kill-after=5s 260s .venv/bin/python -I -B -"
-          if ! timeout --kill-after=5s 290s ssh -F /dev/null -T -p 22 \
-            -o BatchMode=yes -o ConnectionAttempts=1 -o ConnectTimeout=15 \
-            -o HostKeyAlgorithms=ssh-ed25519 -o StrictHostKeyChecking=yes \
-            -o UserKnownHostsFile="$work/known_hosts" -o GlobalKnownHostsFile=/dev/null \
-            -o UpdateHostKeys=no -o VerifyHostKeyDNS=no -o IdentitiesOnly=yes \
-            -o IdentityAgent=none -o PreferredAuthentications=publickey \
-            -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no \
-            -o ForwardAgent=no -o ClearAllForwardings=yes -i "$work/key" \
-            -l "$SSH_USER" -- "$SSH_HOST" "$remote" < "$work/request.py" 2>/dev/null \
-            | python scripts/sample_delivery.py seal --certificate "$work/recipient.pem" \
-                --fingerprint "$RECIPIENT_FINGERPRINT" --output "$work/samples.cms" 2>/dev/null; then
-            fail
-          fi
-          mkdir -m 700 "$RUNNER_TEMP/sealed-match-delivery"
-          mv "$work/samples.cms" "$RUNNER_TEMP/sealed-match-delivery/samples.cms"
-          echo "Encrypted review package prepared; no sample data printed."
-      - name: Deliver encrypted package only
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+          SSH_HOST: ${{ secrets.SERVER_HOST }}
+          SSH_USER: ${{ secrets.SERVER_USER }}
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SSH_FINGERPRINT: ${{ secrets.SERVER_HOST_FINGERPRINT }}
+        run: bash infra/audit/sample_ssh.sh
+  publish:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/ML' && inputs.operation == 'publish' }}
+    environment: match-sample-review
+    permissions:
+      contents: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      STAGE_TICKET: ${{ inputs.stage_ticket }}
+      STAGE_DIGEST: ${{ inputs.stage_digest }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          name: first20-encrypted-review-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/sealed-match-delivery/samples.cms
-          retention-days: 1
-          if-no-files-found: error
-      - name: Clean runner delivery
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.11'
+      - name: Validate explicit prepublication review and fetch only reviewed stage
+        env:
+          SAMPLE_ARCHIVE: ${{ runner.temp }}/reviewed-sample.zip
+          REVIEW_FILE: ${{ runner.temp }}/sample-review.json
+          OPERATION: release
+          CONTENT_REVIEWED: ${{ inputs.content_reviewed }}
+          RIGHTS_REVIEWED: ${{ inputs.rights_reviewed }}
+          CONTENT_EVIDENCE: ${{ inputs.content_evidence }}
+          RIGHTS_EVIDENCE: ${{ inputs.rights_evidence }}
+          SSH_HOST: ${{ secrets.SERVER_HOST }}
+          SSH_USER: ${{ secrets.SERVER_USER }}
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SSH_FINGERPRINT: ${{ secrets.SERVER_HOST_FINGERPRINT }}
+        run: bash infra/audit/sample_ssh.sh
+      - name: Revalidate and create dedicated samples branch and PR into ML
+        env:
+          SAMPLE_ARCHIVE: ${{ runner.temp }}/reviewed-sample.zip
+          REVIEW_FILE: ${{ runner.temp }}/sample-review.json
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/publish_match_samples.py
+      - name: Clean private runner files
+        env:
+          SAMPLE_ARCHIVE: ${{ runner.temp }}/reviewed-sample.zip
+          REVIEW_FILE: ${{ runner.temp }}/sample-review.json
         if: ${{ always() }}
         shell: bash
-        run: rm -rf -- "$RUNNER_TEMP/sealed-match-delivery"
+        run: rm -f -- "$SAMPLE_ARCHIVE" "$REVIEW_FILE"
+  cleanup:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/ML' && inputs.operation == 'cleanup' }}
+    environment: match-sample-review
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.11'
+      - name: Remove only the specified private stage
+        env:
+          OPERATION: cleanup
+          STAGE_TICKET: ${{ inputs.stage_ticket }}
+          SSH_HOST: ${{ secrets.SERVER_HOST }}
+          SSH_USER: ${{ secrets.SERVER_USER }}
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SSH_FINGERPRINT: ${{ secrets.SERVER_HOST_FINGERPRINT }}
+        run: bash infra/audit/sample_ssh.sh

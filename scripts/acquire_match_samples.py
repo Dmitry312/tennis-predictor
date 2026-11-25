@@ -236,7 +236,7 @@ def run(request, project, reviewed_sha):
     """Called only by streamed reviewed bootstrap; writes archive bytes to a pipe."""
     import os
     import importlib.metadata
-    e.need(os.geteuid() != 0,"nonroot_required")
+    e.need(os.geteuid() != 0 or request.get("allow_existing_root") is True,"existing_root_review_required")
     os.environ["OPENBLAS_NUM_THREADS"]="1"
     os.environ["OMP_NUM_THREADS"]="1"
     e.need(sys.version_info >= (3,11),"python_version")
@@ -279,7 +279,12 @@ def run(request, project, reviewed_sha):
             report["runtime"] = runtime
             e.inspect_content(report)
             payload = make_archive(Path(temp)/"catalog",plan,report)
-        sys.stdout.buffer.write(payload)
+        if request.get("operation")=="stage":
+            from scripts.review_staging import store
+            metadata=store(payload,request["ticket"],reviewed_sha)
+            print(json.dumps(metadata,sort_keys=True))
+        else:
+            sys.stdout.buffer.write(payload)
     finally:
         if db is not None:
             db.rollback()

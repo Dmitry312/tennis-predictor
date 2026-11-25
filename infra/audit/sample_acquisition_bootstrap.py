@@ -10,11 +10,19 @@ import sys
 import tempfile
 
 FILES = ("scripts/acquire_match_samples.py","scripts/export_match_samples.py",
-         "infra/audit/full_match_export.py")
+         "infra/audit/full_match_export.py","scripts/review_staging.py","scripts/sample_delivery.py")
+
+
+def package_request(payload):
+    if len(payload)>1024*1024: raise ValueError()
+    request=json.loads(payload).get("request",{})
+    if type(request)is not dict: raise ValueError()
+    return request
 
 
 def execute(payload):
-    if os.geteuid()==0: raise ValueError()
+    request=package_request(payload)
+    if os.geteuid()==0 and request.get("allow_existing_root") is not True: raise ValueError()
     if len(payload)>1024*1024: raise ValueError()
     package = json.loads(payload)
     if set(package["files"])!=set(FILES): raise ValueError()
@@ -22,7 +30,7 @@ def execute(payload):
     project = package["project"]
     if not re.fullmatch(r"/[A-Za-z0-9_./-]{1,200}",project) or ".." in Path(project).parts:
         raise ValueError()
-    if project=="/root" or project.startswith("/root/") or not Path(project).is_dir():
+    if ((project=="/root" or project.startswith("/root/")) and request.get("allow_existing_root") is not True) or not Path(project).is_dir():
         raise ValueError()
     signal.signal(signal.SIGTERM,lambda *_: (_ for _ in ()).throw(RuntimeError()))
     with tempfile.TemporaryDirectory(prefix="tennis-reviewed-code-") as tmp:
@@ -33,7 +41,19 @@ def execute(payload):
             path.write_text(content)
         sys.path.insert(0,tmp)
         from scripts.acquire_match_samples import run
-        run(package["request"],project,package["sha"])
+        operation=request.get("operation","download")
+        if operation=="stage" or operation=="download":
+            run(request,project,package["sha"])
+        else:
+            from scripts.review_staging import release, cleanup
+            if operation=="release":
+                data=release(request["ticket"],request["approval"]["archive_sha256"],
+                             package["sha"],request["approval"])
+                sys.stdout.buffer.write(data)
+            elif operation=="cleanup":
+                cleanup(request["ticket"])
+            else:
+                raise ValueError()
 
 
 def main(encoded):

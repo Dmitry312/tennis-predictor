@@ -240,14 +240,17 @@ def test_workflow_guardrails_and_shell_syntax():
     import yaml
     file=ROOT/".github/workflows/production-match-sample-acquisition.yml"
     text=file.read_text()
+    ssh=(ROOT/"infra/audit/sample_ssh.sh").read_text()
     wf=yaml.load(text,Loader=yaml.BaseLoader)
     assert set(wf["on"])=={"workflow_dispatch"} and wf["permissions"]=={"contents":"read"}
     job=wf["jobs"]["acquire"]
     assert job["environment"]=="match-sample-review" and "refs/heads/ML" in job["if"]
     assert wf["on"]["workflow_dispatch"]["inputs"]["batch_size"]["default"]=="2"
-    assert "StrictHostKeyChecking=yes" in text and "SERVER_HOST_FINGERPRINT" in text
-    assert '!= root' in text and "/root/Tennis_pelmen_model" not in text
-    assert "actions/upload-artifact@" in text and "/samples.cms" in text
+    assert "StrictHostKeyChecking=yes" in ssh and "SERVER_HOST_FINGERPRINT" in text
+    assert '!= root' in ssh and "ALLOW_EXISTING_ROOT" in ssh
+    assert "actions/upload-artifact@" not in text and "RECIPIENT_CERT" not in text
+    assert wf["jobs"]["acquire"]["permissions"]=={"contents":"read"}
+    assert wf["jobs"]["publish"]["permissions"]=={"contents":"write","pull-requests":"write"}
     assert "git push" not in text and "sample-stage.err" not in text
     for step in job["steps"]:
         if "uses" in step: assert len(step["uses"].split("@")[1])==40

@@ -27,6 +27,5 @@ infra/audit/full_match_export.py, not the older production driver that can print
 tracebacks. Existing sanitized exporters and production workflows remain unchanged.
 Do not infer a winner or numeric score-key meaning from synthetic fixtures.
 
-For the reviewed first-20 acquisition workflow, stable bounded batches and encrypted
-pre-commit delivery, see [first20_acquisition.md](first20_acquisition.md) (Issue #67).
+For the reviewed first-20 acquisition workflow, stable bounded batches, private prepublication review and automatic sample PRs, see [first20_acquisition.md](first20_acquisition.md) (Issue #67).
 No production acquisition was executed when preparing this workflow.
