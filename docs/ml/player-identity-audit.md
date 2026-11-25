@@ -82,3 +82,54 @@ tests/test_player_identity_s3_audit.py with fake S3 and in-memory Parquet. It va
 stratification, aliases/collisions, redaction, mapping keys, malformed/oversized inputs,
 budgets, operation allowlist, empty/truncated listings, stream closure, and workflow
 YAML/Bash safety. It has no production secrets or production audit steps.
+
+## Failure diagnosis — Issue #54
+
+Run 45654718056 / job 139353029391 used reviewed ML SHA
+15704039764531fe4c1a61beecd4abe986c829f8. SSH/fingerprint passed; the process
+returned identity_audit_unavailable after about three seconds. This establishes
+remote Python execution, not successful configuration, S3 access or decoding.
+The old catch-all discarded the failure stage; its root cause cannot be recovered
+from that message alone. No production execution was performed for this fix.
+
+Failures now emit only complete=false, bounded_scan_finished=false, the existing
+error label, and fixed allowlisted stage/reason codes. Stages: configuration,
+dependency, resource, list, get, decode, evidence, output. Reasons distinguish
+validation, missing settings, unavailable schema/dependencies, timeout, resource
+exhaustion, access denial, missing objects, changed objects, service/transport
+errors, budget exhaustion, output limit and internal error. Exceptions, SDK
+messages/codes, config values, URLs, paths, object keys and payloads are never copied
+into the diagnostic. Nested stages retain the innermost classification.
+No partial evidence is emitted after a failed scan: a failure can occur while
+updating counters, so returning that state could mislead users.
+
+Checks against the existing working production_parquet_row_review.py:
+- Same literal endpoint and region, five S3 settings, existing .env location and
+  explicit credentials; identity audit still does not require PostgreSQL settings.
+- Found a real compatibility discrepancy: the identity bucket regex excluded dots,
+  while the working review accepted dotted DNS bucket names. Dotted names now work;
+  adjacent dots and IPv4 literals remain rejected. This discrepancy is not evidence
+  that the production bucket is dotted or that it caused the observed failure.
+- The writer detail_job.py:flush uses gender/level/year partitions for details/raw.
+  No wider listing, fallback path, pagination, retries or privilege changes were added.
+- Realistic botocore Stubber responses exercise ResponseMetadata, HTTP headers,
+  timezone-aware LastModified, quoted ETags, StreamingBody, conditional GET and actual
+  operation-guard registration, entirely offline. SDK error responses are classified
+  by fixed HTTP status mappings, never their arbitrary message or service code.
+- Resource limits and dependency imports are separate stages. The existing 4 GiB
+  address-space cap can fail on a constrained process/runtime; it is not raised or
+  disabled. Missing players_json/raw_json is now decode/unsupported_schema rather
+  than an opaque generic error. Neither case is confirmed as the production cause.
+
+Interpretation: configuration/missing_setting means explicit literal settings are
+incomplete; configuration/access_denied or not_found can describe reading the config.
+dependency/dependency_unavailable describes import failures; resource failures do
+not authorize weakening the limit. list/get access_denied describes SDK access,
+object_changed is an HTTP 412 conditional-read failure. decode/unsupported_schema
+requires offline schema compatibility review. Other validation/internal errors
+remain deliberately coarse. A timeout or native hard kill can yield no JSON.
+
+All prior operation, attempt, byte, row, JSON, memory, output and deadline limits
+remain unchanged. Production workflow/publication and its reviewed-ref/fingerprint
+requirements are unchanged. A future separately approved run can identify the stage;
+this PR neither dispatches it nor promises that one particular cause has been fixed.
