@@ -1,7 +1,6 @@
 {
-  "catalog_version": 1,
-  "projection_policy": "linked-sanitized-v1",
-  "publication_status": "synthetic_only_no_real_samples_approved",
+  "catalog_version": 2,
+  "publication_status": "owner_approved_real_sports_content_and_rights_review_required",
   "entries": [
     {
       "path": "examples.synthetic.json",
@@ -12,5 +11,10 @@
       "production_source": null
     }
   ],
-  "real_examples": []
+  "real_examples": [],
+  "owner_public_sports_approval": "2026-11-25",
+  "projection_policies": {
+    "synthetic": "linked-sanitized-v1",
+    "real_examples": "real-sports-original-v1"
+  }
 }
