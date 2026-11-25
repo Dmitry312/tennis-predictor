@@ -1,0 +1,98 @@
+name: Private reviewed match sample staging
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        type: choice
+        options: [stage, cleanup]
+        default: stage
+      reviewed_sha:
+        type: string
+        required: true
+        description: Exact reviewed ML SHA
+      batch_offset:
+        type: string
+        default: '0'
+      batch_size:
+        type: string
+        default: '2'
+        description: Initial 2, maximum 5
+      selection_plan:
+        type: string
+        default: ''
+      source_manifest:
+        type: string
+        default: ''
+      after_uuid:
+        type: string
+        default: ''
+      stage_ticket:
+        type: string
+        default: ''
+        description: Required only for cleanup
+      allow_existing_root:
+        type: boolean
+        default: false
+        description: Reuse existing root runtime only if necessary and reviewed
+permissions:
+  contents: read
+concurrency:
+  group: production-match-sample-acquisition
+  cancel-in-progress: false
+env:
+  REVIEWED_SHA: ${{ inputs.reviewed_sha }}
+  SELECTED_SHA: ${{ github.sha }}
+  PROJECT_PATH: ${{ vars.SAMPLES_PROJECT_PATH || '/root/Tennis_pelmen_model' }}
+  ALLOW_EXISTING_ROOT: ${{ inputs.allow_existing_root }}
+jobs:
+  acquire:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/ML' && inputs.operation == 'stage' }}
+    environment: match-sample-review
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.11'
+      - name: Stage bounded JSON privately with existing SSH
+        env:
+          OPERATION: stage
+          STAGE_TICKET: gh-${{ github.run_id }}-${{ github.run_attempt }}
+          BATCH_OFFSET: ${{ inputs.batch_offset }}
+          BATCH_SIZE: ${{ inputs.batch_size }}
+          PLAN_PATH: ${{ inputs.selection_plan }}
+          MANIFEST_PATH: ${{ inputs.source_manifest }}
+          AFTER_UUID: ${{ inputs.after_uuid }}
+          SSH_HOST: ${{ secrets.SERVER_HOST }}
+          SSH_USER: ${{ secrets.SERVER_USER }}
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SSH_FINGERPRINT: ${{ secrets.SERVER_HOST_FINGERPRINT }}
+        run: bash infra/audit/sample_ssh.sh
+  cleanup:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/ML' && inputs.operation == 'cleanup' }}
+    environment: match-sample-review
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.11'
+      - name: Remove only the specified private stage
+        env:
+          OPERATION: cleanup
+          STAGE_TICKET: ${{ inputs.stage_ticket }}
+          SSH_HOST: ${{ secrets.SERVER_HOST }}
+          SSH_USER: ${{ secrets.SERVER_USER }}
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SSH_FINGERPRINT: ${{ secrets.SERVER_HOST_FINGERPRINT }}
+        run: bash infra/audit/sample_ssh.sh
