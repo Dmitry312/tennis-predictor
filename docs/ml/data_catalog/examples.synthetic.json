@@ -1,0 +1,1325 @@
+{
+  "catalog_version": 1,
+  "origin": "synthetic_fabricated_not_production",
+  "schema_semantics": "Numeric key 1 is a fictional score-pair example, not a production mapping",
+  "batches": [
+    {
+      "complete": false,
+      "population_coverage": "synthetic_only",
+      "cases": [
+        "finished_straight",
+        "deciding_tiebreak",
+        "bo5"
+      ],
+      "matches": [
+        {
+          "match_alias": "M1",
+          "player_aliases": [
+            "M1P1",
+            "M1P2"
+          ],
+          "player_identity": "local_roles_not_verified_people",
+          "matches": {
+            "gender": "M",
+            "level": "tour",
+            "status": 3,
+            "surface": "hard"
+          },
+          "independent_winner": {
+            "available": false,
+            "reason": "no_reviewed_reference"
+          },
+          "sources": {
+            "nbbet_details": {
+              "coverage": "observed_subset",
+              "source_player_aliases": [
+                "M1P1",
+                "M1P2"
+              ],
+              "orientation": "caller_review_attested",
+              "storage_types": {
+                "status": "int",
+                "details_version": "int",
+                "has_coverage": "null",
+                "sets_json": "string",
+                "players_json": "string"
+              },
+              "absent_columns": [],
+              "rows": [
+                {
+                  "status": 3,
+                  "details_version": 3,
+                  "has_coverage": null,
+                  "sets_json": [
+                    {
+                      "fields": {
+                        "1": [
+                          6,
+                          "4"
+                        ],
+                        "2": null
+                      },
+                      "omitted_keys": 0
+                    },
+                    {
+                      "fields": {
+                        "1": [
+                          6,
+                          2
+                        ],
+                        "2": null
+                      },
+                      "omitted_keys": 0
+                    }
+                  ],
+                  "players_json": {
+                    "p1": {
+                      "player_alias": "M1P1",
+                      "profile_values_redacted": true
+                    },
+                    "p2": {
+                      "player_alias": "M1P2",
+                      "profile_values_redacted": true
+                    }
+                  }
+                }
+              ],
+              "matching_rows_observed": 1,
+              "rows_omitted_by_cap": 0,
+              "invalid_join_rows": 0
+            },
+            "nbbet_stats": {
+              "coverage": "observed_subset",
+              "source_player_aliases": [
+                "M1P1",
+                "M1P2"
+              ],
+              "rows": [
+                {
+                  "scope": 0,
+                  "aces_p1": 3,
+                  "aces_p2": null
+                }
+              ],
+              "storage_types": {
+                "scope": "int",
+                "aces_p1": "int",
+                "aces_p2": "null"
+              },
+              "absent_columns": [
+                "break_points_all_p1",
+                "break_points_all_p2",
+                "break_points_won_p1",
+                "break_points_won_p2",
+                "double_faults_p1",
+                "double_faults_p2",
+                "first_serve_points_all_p1",
+                "first_serve_points_all_p2",
+                "first_serve_points_won_p1",
+                "first_serve_points_won_p2",
+                "max_games_in_row_p1",
+                "max_games_in_row_p2",
+                "max_points_in_row_p1",
+                "max_points_in_row_p2",
+                "second_serve_points_all_p1",
+                "second_serve_points_all_p2",
+                "second_serve_points_won_p1",
+                "second_serve_points_won_p2",
+                "service_games_all_p1",
+                "service_games_all_p2",
+                "service_games_won_p1",
+                "service_games_won_p2",
+                "unforced_errors_p1",
+                "unforced_errors_p2",
+                "winners_p1",
+                "winners_p2"
+              ],
+              "matching_rows_observed": 1,
+              "rows_omitted_by_cap": 0,
+              "invalid_join_rows": 0,
+              "orientation": "caller_review_attested"
+            },
+            "pbp": {
+              "coverage": "observed_subset",
+              "source_player_aliases": [
+                "M1P1",
+                "M1P2"
+              ],
+              "rows": [
+                {
+                  "set_num": 1,
+                  "game_num": 1,
+                  "point_num": 1,
+                  "server": 1,
+                  "point_winner": 2,
+                  "score_server": "0",
+                  "score_returner": "15",
+                  "game_complete": false
+                }
+              ],
+              "storage_types": {
+                "set_num": "int",
+                "game_num": "int",
+                "point_num": "int",
+                "server": "int",
+                "point_winner": "int",
+                "score_server": "string",
+                "score_returner": "string",
+                "game_complete": "bool"
+              },
+              "absent_columns": [
+                "is_break_point",
+                "is_match_point",
+                "is_tiebreak",
+                "point_type",
+                "server_won_point"
+              ],
+              "matching_rows_observed": 1,
+              "rows_omitted_by_cap": 0,
+              "invalid_join_rows": 0,
+              "orientation": "caller_review_attested"
+            },
+            "nbbet_raw": {
+              "coverage": "observed_subset",
+              "source_player_aliases": [
+                "M1P1",
+                "M1P2"
+              ],
+              "rows": [
+                {
+                  "raw_json": {
+                    "match": {
+                      "3": {
+                        "player_alias": "M1P1",
+                        "profile_values_redacted": true
+                      },
+                      "5": {
+                        "player_alias": "M1P2",
+                        "profile_values_redacted": true
+                      },
+                      "23": 3,
+                      "24": [
+                        {
+                          "fields": {
+                            "1": [
+                              6,
+                              "4"
+                            ],
+                            "2": null
+                          },
+                          "omitted_keys": 0
+                        },
+                        {
+                          "fields": {
+                            "1": [
+                              6,
+                              2
+                            ],
+                            "2": null
+                          },
+                          "omitted_keys": 0
+                        }
+                      ]
+                    },
+                    "outside_match_keys_omitted": 0
+                  }
+                }
+              ],
+              "storage_types": {
+                "raw_json": "string"
+              },
+              "absent_columns": [],
+              "matching_rows_observed": 1,
+              "rows_omitted_by_cap": 0,
+              "invalid_join_rows": 0,
+              "orientation": "caller_review_attested"
+            }
+          }
+        },
+        {
+          "match_alias": "M2",
+          "player_aliases": [
+            "M2P1",
+            "M2P2"
+          ],
+          "player_identity": "local_roles_not_verified_people",
+          "matches": {
+            "gender": "M",
+            "level": "tour",
+            "status": 3,
+            "surface": "hard"
+          },
+          "independent_winner": {
+            "available": false,
+            "reason": "no_reviewed_reference"
+          },
+          "sources": {
+            "nbbet_details": {
+              "coverage": "observed_subset",
+              "source_player_aliases": [
+                "M2P1",
+                "M2P2"
+              ],
+              "orientation": "caller_review_attested",
+              "storage_types": {
+                "status": "int",
+                "details_version": "int",
+                "has_coverage": "null",
+                "sets_json": "string",
+                "players_json": "string"
+              },
+              "absent_columns": [],
+              "rows": [
+                {
+                  "status": 3,
+                  "details_version": 3,
+                  "has_coverage": null,
+                  "sets_json": [
+                    {
+                      "fields": {
+                        "1": [
+                          7,
+                          6
+                        ],
+                        "2": null
+                      },
+                      "omitted_keys": 0
+                    },
+                    {
+                      "fields": {
+                        "1": [
+                          4,
+                          6
+                        ],
+                        "2": null
+                      },
+                      "omitted_keys": 0
+                    },
+                    {
+                      "fields": {
+                        "1": [
+                          7,
+                          6
+                        ],
+                        "2": null
+                      },
+                      "omitted_keys": 0
+                    }
+                  ],
+                  "players_json": {
+                    "p1": {
+                      "player_alias": "M2P1",
+                      "profile_values_redacted": true
+                    },
+                    "p2": {
+                      "player_alias": "M2P2",
+                      "profile_values_redacted": true
+                    }
+                  }
+                }
+              ],
+              "matching_rows_observed": 1,
+              "rows_omitted_by_cap": 0,
+              "invalid_join_rows": 0
+            },
+            "nbbet_stats": {
+              "coverage": "observed_subset",
+              "source_player_aliases": [
+                "M2P1",
+                "M2P2"
+              ],
+              "rows": [
+                {
+                  "scope": 0,
+                  "aces_p1": 3,
+                  "aces_p2": null
+                }
+              ],
+              "storage_types": {
+                "scope": "int",
+                "aces_p1": "int",
+                "aces_p2": "null"
+              },
+              "absent_columns": [
+                "break_points_all_p1",
+                "break_points_all_p2",
+                "break_points_won_p1",
+                "break_points_won_p2",
+                "double_faults_p1",
+                "double_faults_p2",
+                "first_serve_points_all_p1",
+                "first_serve_points_all_p2",
+                "first_serve_points_won_p1",
+                "first_serve_points_won_p2",
+                "max_games_in_row_p1",
+                "max_games_in_row_p2",
+                "max_points_in_row_p1",
+                "max_points_in_row_p2",
+                "second_serve_points_all_p1",
+                "second_serve_points_all_p2",
+                "second_serve_points_won_p1",
+                "second_serve_points_won_p2",
+                "service_games_all_p1",
+                "service_games_all_p2",
+                "service_games_won_p1",
+                "service_games_won_p2",
+                "unforced_errors_p1",
+                "unforced_errors_p2",
+                "winners_p1",
+                "winners_p2"
+              ],
+              "matching_rows_observed": 1,
+              "rows_omitted_by_cap": 0,
+              "invalid_join_rows": 0,
+              "orientation": "caller_review_attested"
+            },
+            "pbp": {
+              "coverage": "observed_subset",
+              "source_player_aliases": [
+                "M2P1",
+                "M2P2"
+              ],
+              "rows": [
+                {
+                  "set_num": 1,
+                  "game_num": 1,
+                  "point_num": 1,
+                  "server": 1,
+                  "point_winner": 2,
+                  "score_server": "0",
+                  "score_returner": "15",
+                  "game_complete": false
+                }
+              ],
+              "storage_types": {
+                "set_num": "int",
+                "game_num": "int",
+                "point_num": "int",
+                "server": "int",
+                "point_winner": "int",
+                "score_server": "string",
+                "score_returner": "string",
+                "game_complete": "bool"
+              },
+              "absent_columns": [
+                "is_break_point",
+                "is_match_point",
+                "is_tiebreak",
+                "point_type",
+                "server_won_point"
+              ],
+              "matching_rows_observed": 1,
+              "rows_omitted_by_cap": 0,
+              "invalid_join_rows": 0,
+              "orientation": "caller_review_attested"
+            },
+            "nbbet_raw": {
+              "coverage": "observed_subset",
+              "source_player_aliases": [
+                "M2P1",
+                "M2P2"
+              ],
+              "rows": [
+                {
+                  "raw_json": {
+                    "match": {
+                      "3": {
+                        "player_alias": "M2P1",
+                        "profile_values_redacted": true
+                      },
+                      "5": {
+                        "player_alias": "M2P2",
+                        "profile_values_redacted": true
+                      },
+                      "23": 3,
+                      "24": [
+                        {
+                          "fields": {
+                            "1": [
+                              7,
+                              6
+                            ],
+                            "2": null
+                          },
+                          "omitted_keys": 0
+                        },
+                        {
+                          "fields": {
+                            "1": [
+                              4,
+                              6
+                            ],
+                            "2": null
+                          },
+                          "omitted_keys": 0
+                        },
+                        {
+                          "fields": {
+                            "1": [
+                              7,
+                              6
+                            ],
+                            "2": null
+                          },
+                          "omitted_keys": 0
+                        }
+                      ]
+                    },
+                    "outside_match_keys_omitted": 0
+                  }
+                }
+              ],
+              "storage_types": {
+                "raw_json": "string"
+              },
+              "absent_columns": [],
+              "matching_rows_observed": 1,
+              "rows_omitted_by_cap": 0,
+              "invalid_join_rows": 0,
+              "orientation": "caller_review_attested"
+            }
+          }
+        },
+        {
+          "match_alias": "M3",
+          "player_aliases": [
+            "M3P1",
+            "M3P2"
+          ],
+          "player_identity": "local_roles_not_verified_people",
+          "matches": {
+            "gender": "M",
+            "level": "tour",
+            "status": 3,
+            "surface": "hard"
+          },
+          "independent_winner": {
+            "available": false,
+            "reason": "no_reviewed_reference"
+          },
+          "sources": {
+            "nbbet_details": {
+              "coverage": "observed_subset",
+              "source_player_aliases": [
+                "M3P1",
+                "M3P2"
+              ],
+              "orientation": "caller_review_attested",
+              "storage_types": {
+                "status": "int",
+                "details_version": "int",
+                "has_coverage": "null",
+                "sets_json": "string",
+                "players_json": "string"
+              },
+              "absent_columns": [],
+              "rows": [
+                {
+                  "status": 3,
+                  "details_version": 3,
+                  "has_coverage": null,
+                  "sets_json": [
+                    {
+                      "fields": {
+                        "1": [
+                          6,
+                          4
+                        ],
+                        "2": null
+                      },
+                      "omitted_keys": 0
+                    },
+                    {
+                      "fields": {
+                        "1": [
+                          4,
+                          6
+                        ],
+                        "2": null
+                      },
+                      "omitted_keys": 0
+                    },
+                    {
+                      "fields": {
+                        "1": [
+                          6,
+                          3
+                        ],
+                        "2": null
+                      },
+                      "omitted_keys": 0
+                    },
+                    {
+                      "fields": {
+                        "1": [
+                          6,
+                          2
+                        ],
+                        "2": null
+                      },
+                      "omitted_keys": 0
+                    }
+                  ],
+                  "players_json": {
+                    "p1": {
+                      "player_alias": "M3P1",
+                      "profile_values_redacted": true
+                    },
+                    "p2": {
+                      "player_alias": "M3P2",
+                      "profile_values_redacted": true
+                    }
+                  }
+                }
+              ],
+              "matching_rows_observed": 1,
+              "rows_omitted_by_cap": 0,
+              "invalid_join_rows": 0
+            },
+            "nbbet_stats": {
+              "coverage": "observed_subset",
+              "source_player_aliases": [
+                "M3P1",
+                "M3P2"
+              ],
+              "rows": [
+                {
+                  "scope": 0,
+                  "aces_p1": 3,
+                  "aces_p2": null
+                }
+              ],
+              "storage_types": {
+                "scope": "int",
+                "aces_p1": "int",
+                "aces_p2": "null"
+              },
+              "absent_columns": [
+                "break_points_all_p1",
+                "break_points_all_p2",
+                "break_points_won_p1",
+                "break_points_won_p2",
+                "double_faults_p1",
+                "double_faults_p2",
+                "first_serve_points_all_p1",
+                "first_serve_points_all_p2",
+                "first_serve_points_won_p1",
+                "first_serve_points_won_p2",
+                "max_games_in_row_p1",
+                "max_games_in_row_p2",
+                "max_points_in_row_p1",
+                "max_points_in_row_p2",
+                "second_serve_points_all_p1",
+                "second_serve_points_all_p2",
+                "second_serve_points_won_p1",
+                "second_serve_points_won_p2",
+                "service_games_all_p1",
+                "service_games_all_p2",
+                "service_games_won_p1",
+                "service_games_won_p2",
+                "unforced_errors_p1",
+                "unforced_errors_p2",
+                "winners_p1",
+                "winners_p2"
+              ],
+              "matching_rows_observed": 1,
+              "rows_omitted_by_cap": 0,
+              "invalid_join_rows": 0,
+              "orientation": "caller_review_attested"
+            },
+            "pbp": {
+              "coverage": "observed_subset",
+              "source_player_aliases": [
+                "M3P1",
+                "M3P2"
+              ],
+              "rows": [
+                {
+                  "set_num": 1,
+                  "game_num": 1,
+                  "point_num": 1,
+                  "server": 1,
+                  "point_winner": 2,
+                  "score_server": "0",
+                  "score_returner": "15",
+                  "game_complete": false
+                }
+              ],
+              "storage_types": {
+                "set_num": "int",
+                "game_num": "int",
+                "point_num": "int",
+                "server": "int",
+                "point_winner": "int",
+                "score_server": "string",
+                "score_returner": "string",
+                "game_complete": "bool"
+              },
+              "absent_columns": [
+                "is_break_point",
+                "is_match_point",
+                "is_tiebreak",
+                "point_type",
+                "server_won_point"
+              ],
+              "matching_rows_observed": 1,
+              "rows_omitted_by_cap": 0,
+              "invalid_join_rows": 0,
+              "orientation": "caller_review_attested"
+            },
+            "nbbet_raw": {
+              "coverage": "observed_subset",
+              "source_player_aliases": [
+                "M3P1",
+                "M3P2"
+              ],
+              "rows": [
+                {
+                  "raw_json": {
+                    "match": {
+                      "3": {
+                        "player_alias": "M3P1",
+                        "profile_values_redacted": true
+                      },
+                      "5": {
+                        "player_alias": "M3P2",
+                        "profile_values_redacted": true
+                      },
+                      "23": 3,
+                      "24": [
+                        {
+                          "fields": {
+                            "1": [
+                              6,
+                              4
+                            ],
+                            "2": null
+                          },
+                          "omitted_keys": 0
+                        },
+                        {
+                          "fields": {
+                            "1": [
+                              4,
+                              6
+                            ],
+                            "2": null
+                          },
+                          "omitted_keys": 0
+                        },
+                        {
+                          "fields": {
+                            "1": [
+                              6,
+                              3
+                            ],
+                            "2": null
+                          },
+                          "omitted_keys": 0
+                        },
+                        {
+                          "fields": {
+                            "1": [
+                              6,
+                              2
+                            ],
+                            "2": null
+                          },
+                          "omitted_keys": 0
+                        }
+                      ]
+                    },
+                    "outside_match_keys_omitted": 0
+                  }
+                }
+              ],
+              "storage_types": {
+                "raw_json": "string"
+              },
+              "absent_columns": [],
+              "matching_rows_observed": 1,
+              "rows_omitted_by_cap": 0,
+              "invalid_join_rows": 0,
+              "orientation": "caller_review_attested"
+            }
+          }
+        }
+      ],
+      "semantic_verification": "pending"
+    },
+    {
+      "complete": false,
+      "population_coverage": "synthetic_only",
+      "cases": [
+        "retirement",
+        "walkover",
+        "legacy",
+        "current"
+      ],
+      "matches": [
+        {
+          "match_alias": "M1",
+          "player_aliases": [
+            "M1P1",
+            "M1P2"
+          ],
+          "player_identity": "local_roles_not_verified_people",
+          "matches": {
+            "gender": "M",
+            "level": "tour",
+            "status": 9,
+            "surface": "hard"
+          },
+          "independent_winner": {
+            "available": false,
+            "reason": "no_reviewed_reference"
+          },
+          "sources": {
+            "nbbet_details": {
+              "coverage": "observed_subset",
+              "source_player_aliases": [
+                "M1P1",
+                "M1P2"
+              ],
+              "orientation": "caller_review_attested",
+              "storage_types": {
+                "status": "int",
+                "details_version": "int",
+                "has_coverage": "null",
+                "sets_json": "string",
+                "players_json": "string"
+              },
+              "absent_columns": [],
+              "rows": [
+                {
+                  "status": 9,
+                  "details_version": 3,
+                  "has_coverage": null,
+                  "sets_json": [
+                    {
+                      "fields": {
+                        "1": [
+                          6,
+                          4
+                        ],
+                        "2": null
+                      },
+                      "omitted_keys": 0
+                    },
+                    {
+                      "fields": {
+                        "1": [
+                          2,
+                          3
+                        ],
+                        "2": null
+                      },
+                      "omitted_keys": 0
+                    }
+                  ],
+                  "players_json": {
+                    "p1": {
+                      "player_alias": "M1P1",
+                      "profile_values_redacted": true
+                    },
+                    "p2": {
+                      "player_alias": "M1P2",
+                      "profile_values_redacted": true
+                    }
+                  }
+                }
+              ],
+              "matching_rows_observed": 1,
+              "rows_omitted_by_cap": 0,
+              "invalid_join_rows": 0
+            },
+            "nbbet_stats": {
+              "coverage": "observed_subset",
+              "source_player_aliases": [
+                "M1P1",
+                "M1P2"
+              ],
+              "rows": [
+                {
+                  "scope": 0,
+                  "aces_p1": 3,
+                  "aces_p2": null
+                }
+              ],
+              "storage_types": {
+                "scope": "int",
+                "aces_p1": "int",
+                "aces_p2": "null"
+              },
+              "absent_columns": [
+                "break_points_all_p1",
+                "break_points_all_p2",
+                "break_points_won_p1",
+                "break_points_won_p2",
+                "double_faults_p1",
+                "double_faults_p2",
+                "first_serve_points_all_p1",
+                "first_serve_points_all_p2",
+                "first_serve_points_won_p1",
+                "first_serve_points_won_p2",
+                "max_games_in_row_p1",
+                "max_games_in_row_p2",
+                "max_points_in_row_p1",
+                "max_points_in_row_p2",
+                "second_serve_points_all_p1",
+                "second_serve_points_all_p2",
+                "second_serve_points_won_p1",
+                "second_serve_points_won_p2",
+                "service_games_all_p1",
+                "service_games_all_p2",
+                "service_games_won_p1",
+                "service_games_won_p2",
+                "unforced_errors_p1",
+                "unforced_errors_p2",
+                "winners_p1",
+                "winners_p2"
+              ],
+              "matching_rows_observed": 1,
+              "rows_omitted_by_cap": 0,
+              "invalid_join_rows": 0,
+              "orientation": "caller_review_attested"
+            },
+            "pbp": {
+              "coverage": "observed_subset",
+              "source_player_aliases": [
+                "M1P1",
+                "M1P2"
+              ],
+              "rows": [
+                {
+                  "set_num": 1,
+                  "game_num": 1,
+                  "point_num": 1,
+                  "server": 1,
+                  "point_winner": 2,
+                  "score_server": "0",
+                  "score_returner": "15",
+                  "game_complete": false
+                }
+              ],
+              "storage_types": {
+                "set_num": "int",
+                "game_num": "int",
+                "point_num": "int",
+                "server": "int",
+                "point_winner": "int",
+                "score_server": "string",
+                "score_returner": "string",
+                "game_complete": "bool"
+              },
+              "absent_columns": [
+                "is_break_point",
+                "is_match_point",
+                "is_tiebreak",
+                "point_type",
+                "server_won_point"
+              ],
+              "matching_rows_observed": 1,
+              "rows_omitted_by_cap": 0,
+              "invalid_join_rows": 0,
+              "orientation": "caller_review_attested"
+            },
+            "nbbet_raw": {
+              "coverage": "observed_subset",
+              "source_player_aliases": [
+                "M1P1",
+                "M1P2"
+              ],
+              "rows": [
+                {
+                  "raw_json": {
+                    "match": {
+                      "3": {
+                        "player_alias": "M1P1",
+                        "profile_values_redacted": true
+                      },
+                      "5": {
+                        "player_alias": "M1P2",
+                        "profile_values_redacted": true
+                      },
+                      "23": 9,
+                      "24": [
+                        {
+                          "fields": {
+                            "1": [
+                              6,
+                              4
+                            ],
+                            "2": null
+                          },
+                          "omitted_keys": 0
+                        },
+                        {
+                          "fields": {
+                            "1": [
+                              2,
+                              3
+                            ],
+                            "2": null
+                          },
+                          "omitted_keys": 0
+                        }
+                      ]
+                    },
+                    "outside_match_keys_omitted": 0
+                  }
+                }
+              ],
+              "storage_types": {
+                "raw_json": "string"
+              },
+              "absent_columns": [],
+              "matching_rows_observed": 1,
+              "rows_omitted_by_cap": 0,
+              "invalid_join_rows": 0,
+              "orientation": "caller_review_attested"
+            }
+          }
+        },
+        {
+          "match_alias": "M2",
+          "player_aliases": [
+            "M2P1",
+            "M2P2"
+          ],
+          "player_identity": "local_roles_not_verified_people",
+          "matches": {
+            "gender": "M",
+            "level": "tour",
+            "status": 8,
+            "surface": "hard"
+          },
+          "independent_winner": {
+            "available": false,
+            "reason": "no_reviewed_reference"
+          },
+          "sources": {
+            "nbbet_details": {
+              "coverage": "observed_subset",
+              "source_player_aliases": [
+                "M2P1",
+                "M2P2"
+              ],
+              "orientation": "caller_review_attested",
+              "storage_types": {
+                "status": "int",
+                "details_version": "int",
+                "has_coverage": "null",
+                "sets_json": "string",
+                "players_json": "string"
+              },
+              "absent_columns": [],
+              "rows": [
+                {
+                  "status": 8,
+                  "details_version": 3,
+                  "has_coverage": null,
+                  "sets_json": [],
+                  "players_json": {
+                    "p1": {
+                      "player_alias": "M2P1",
+                      "profile_values_redacted": true
+                    },
+                    "p2": {
+                      "player_alias": "M2P2",
+                      "profile_values_redacted": true
+                    }
+                  }
+                }
+              ],
+              "matching_rows_observed": 1,
+              "rows_omitted_by_cap": 0,
+              "invalid_join_rows": 0
+            },
+            "nbbet_stats": {
+              "coverage": "observed_subset",
+              "source_player_aliases": [
+                "M2P1",
+                "M2P2"
+              ],
+              "rows": [
+                {
+                  "scope": 0,
+                  "aces_p1": 3,
+                  "aces_p2": null
+                }
+              ],
+              "storage_types": {
+                "scope": "int",
+                "aces_p1": "int",
+                "aces_p2": "null"
+              },
+              "absent_columns": [
+                "break_points_all_p1",
+                "break_points_all_p2",
+                "break_points_won_p1",
+                "break_points_won_p2",
+                "double_faults_p1",
+                "double_faults_p2",
+                "first_serve_points_all_p1",
+                "first_serve_points_all_p2",
+                "first_serve_points_won_p1",
+                "first_serve_points_won_p2",
+                "max_games_in_row_p1",
+                "max_games_in_row_p2",
+                "max_points_in_row_p1",
+                "max_points_in_row_p2",
+                "second_serve_points_all_p1",
+                "second_serve_points_all_p2",
+                "second_serve_points_won_p1",
+                "second_serve_points_won_p2",
+                "service_games_all_p1",
+                "service_games_all_p2",
+                "service_games_won_p1",
+                "service_games_won_p2",
+                "unforced_errors_p1",
+                "unforced_errors_p2",
+                "winners_p1",
+                "winners_p2"
+              ],
+              "matching_rows_observed": 1,
+              "rows_omitted_by_cap": 0,
+              "invalid_join_rows": 0,
+              "orientation": "caller_review_attested"
+            },
+            "pbp": {
+              "coverage": "missing_or_unplanned",
+              "source_player_aliases": null,
+              "rows": [],
+              "storage_types": {},
+              "absent_columns": [
+                "game_complete",
+                "game_num",
+                "is_break_point",
+                "is_match_point",
+                "is_tiebreak",
+                "point_num",
+                "point_type",
+                "point_winner",
+                "score_returner",
+                "score_server",
+                "server",
+                "server_won_point",
+                "set_num"
+              ],
+              "matching_rows_observed": 0,
+              "rows_omitted_by_cap": 0,
+              "invalid_join_rows": 0,
+              "orientation": "unknown"
+            },
+            "nbbet_raw": {
+              "coverage": "observed_subset",
+              "source_player_aliases": [
+                "M2P1",
+                "M2P2"
+              ],
+              "rows": [
+                {
+                  "raw_json": {
+                    "match": {
+                      "3": {
+                        "player_alias": "M2P1",
+                        "profile_values_redacted": true
+                      },
+                      "5": {
+                        "player_alias": "M2P2",
+                        "profile_values_redacted": true
+                      },
+                      "23": 8,
+                      "24": []
+                    },
+                    "outside_match_keys_omitted": 0
+                  }
+                }
+              ],
+              "storage_types": {
+                "raw_json": "string"
+              },
+              "absent_columns": [],
+              "matching_rows_observed": 1,
+              "rows_omitted_by_cap": 0,
+              "invalid_join_rows": 0,
+              "orientation": "caller_review_attested"
+            }
+          }
+        },
+        {
+          "match_alias": "M3",
+          "player_aliases": [
+            "M3P1",
+            "M3P2"
+          ],
+          "player_identity": "local_roles_not_verified_people",
+          "matches": {
+            "gender": "M",
+            "level": "tour",
+            "status": 3,
+            "surface": "hard"
+          },
+          "independent_winner": {
+            "available": false,
+            "reason": "no_reviewed_reference"
+          },
+          "sources": {
+            "nbbet_details": {
+              "coverage": "observed_subset",
+              "source_player_aliases": null,
+              "orientation": "caller_review_attested",
+              "storage_types": {
+                "status": "int",
+                "details_version": "int",
+                "has_coverage": "null",
+                "sets_json": "string"
+              },
+              "absent_columns": [
+                "players_json"
+              ],
+              "rows": [
+                {
+                  "status": 3,
+                  "details_version": 1,
+                  "has_coverage": null,
+                  "sets_json": [
+                    {
+                      "fields": {
+                        "1": [
+                          6,
+                          4
+                        ],
+                        "2": null
+                      },
+                      "omitted_keys": 0
+                    },
+                    {
+                      "fields": {
+                        "1": [
+                          6,
+                          2
+                        ],
+                        "2": null
+                      },
+                      "omitted_keys": 0
+                    }
+                  ]
+                }
+              ],
+              "matching_rows_observed": 1,
+              "rows_omitted_by_cap": 0,
+              "invalid_join_rows": 0
+            },
+            "nbbet_stats": {
+              "coverage": "observed_subset",
+              "source_player_aliases": [
+                "M3P1",
+                "M3P2"
+              ],
+              "rows": [
+                {
+                  "scope": 0,
+                  "aces_p1": 3,
+                  "aces_p2": null
+                }
+              ],
+              "storage_types": {
+                "scope": "int",
+                "aces_p1": "int",
+                "aces_p2": "null"
+              },
+              "absent_columns": [
+                "break_points_all_p1",
+                "break_points_all_p2",
+                "break_points_won_p1",
+                "break_points_won_p2",
+                "double_faults_p1",
+                "double_faults_p2",
+                "first_serve_points_all_p1",
+                "first_serve_points_all_p2",
+                "first_serve_points_won_p1",
+                "first_serve_points_won_p2",
+                "max_games_in_row_p1",
+                "max_games_in_row_p2",
+                "max_points_in_row_p1",
+                "max_points_in_row_p2",
+                "second_serve_points_all_p1",
+                "second_serve_points_all_p2",
+                "second_serve_points_won_p1",
+                "second_serve_points_won_p2",
+                "service_games_all_p1",
+                "service_games_all_p2",
+                "service_games_won_p1",
+                "service_games_won_p2",
+                "unforced_errors_p1",
+                "unforced_errors_p2",
+                "winners_p1",
+                "winners_p2"
+              ],
+              "matching_rows_observed": 1,
+              "rows_omitted_by_cap": 0,
+              "invalid_join_rows": 0,
+              "orientation": "caller_review_attested"
+            },
+            "pbp": {
+              "coverage": "observed_subset",
+              "source_player_aliases": [
+                "M3P1",
+                "M3P2"
+              ],
+              "rows": [
+                {
+                  "set_num": 1,
+                  "game_num": 1,
+                  "point_num": 1,
+                  "server": 1,
+                  "point_winner": 2,
+                  "score_server": "0",
+                  "score_returner": "15",
+                  "game_complete": false
+                }
+              ],
+              "storage_types": {
+                "set_num": "int",
+                "game_num": "int",
+                "point_num": "int",
+                "server": "int",
+                "point_winner": "int",
+                "score_server": "string",
+                "score_returner": "string",
+                "game_complete": "bool"
+              },
+              "absent_columns": [
+                "is_break_point",
+                "is_match_point",
+                "is_tiebreak",
+                "point_type",
+                "server_won_point"
+              ],
+              "matching_rows_observed": 1,
+              "rows_omitted_by_cap": 0,
+              "invalid_join_rows": 0,
+              "orientation": "caller_review_attested"
+            },
+            "nbbet_raw": {
+              "coverage": "missing_or_unplanned",
+              "source_player_aliases": null,
+              "rows": [],
+              "storage_types": {},
+              "absent_columns": [
+                "raw_json"
+              ],
+              "matching_rows_observed": 0,
+              "rows_omitted_by_cap": 0,
+              "invalid_join_rows": 0,
+              "orientation": "unknown"
+            }
+          }
+        }
+      ],
+      "semantic_verification": "pending"
+    }
+  ]
+}
