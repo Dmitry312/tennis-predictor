@@ -1,0 +1,5 @@
+# Real data review policy
+
+Owner decision, 2026-11-25: use actual database and stored source records by default for ML research, schema interpretation and design. Do not mask names, IDs, scores or other ordinary sports fields merely for internal inspection. Preserve original values, keys, types and links. Apply additional field restrictions when requested by the owner. Synthetic fixtures remain useful for automated tests and edge cases, but never substitute for actual evidence or establish production semantics.
+
+Keep reusable real examples in a protected project-accessible location; public GitHub publication is a separate decision. Never include credentials, tokens, private keys or connection secrets. Existing public catalog projection policy remains applicable to public exports, not a requirement for internal inspection. Production access remains bounded and read-only, with separate approval for production execution. Do not silently relax existing workflow guards. Record source/schema provenance and distinguish observed facts from interpretations.
