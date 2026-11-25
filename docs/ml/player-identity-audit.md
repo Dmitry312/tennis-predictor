@@ -46,6 +46,7 @@ when repeat observations are missing. Orientation/result semantics are not audit
 65-second cooperative deadline, 95-second process alarm, 110-second remote timeout;
 4 GiB address-space limit and one BLAS/OMP thread. SDK connect/read timeouts 2/3 seconds.
 JSON <=64 KiB/row, depth/node/container/path budgets; output <=32 KiB.
+LIST calls reserve 1 MiB of headroom before I/O; parsed listing size is charged conservatively.
 GET sizes reserved before reading, ETag/IfMatch and exact length/status validated;
 streams close on errors. LIST accounting uses a conservative serialized-size estimate.
 LIST parsing trusts the configured S3 service to honor MaxKeys/key bounds; it is not

@@ -62,7 +62,7 @@ def token(value):
 
 class Evidence:
     def __init__(self):
-        self.rows = self.invalid = self.nodes = 0
+        self.rows = self.invalid = self.nodes = self.missing_players = 0
         self.objects = collections.Counter()
         self.paths, self.seen_rows = {}, set()
 
@@ -131,6 +131,7 @@ class Evidence:
         require(len(players) <= 128)
         for scope, player in players:
             if not isinstance(player, dict):
+                self.missing_players += 1
                 continue
             self.objects[scope] += 1
             name = player.get("1")
@@ -173,6 +174,7 @@ class Evidence:
                 "cross_gender_values": sum(len(v["genders"]) > 1 for v in vals),
                 "name_association": "field_1_heuristic_not_verified"})
         return {"decoded_rows": self.rows, "invalid_json_rows": self.invalid,
+                "missing_player_objects": self.missing_players,
                 "unique_source_year_rows": len(self.seen_rows), "paths": paths,
                 "identity_confirmed": False, "semantic_verification": "pending"}
 
@@ -181,7 +183,7 @@ class Reader:
     def __init__(self, client, bucket, clock=time.monotonic):
         self.client, self.bucket, self.clock = client, bucket, clock
         self.end = clock() + 65
-        self.lists = self.gets = self.bytes = self.attempts = 0
+        self.lists = self.gets = self.bytes = self.attempts = self.sent_in_call = 0
 
     def check(self):
         require(self.clock() < self.end)
@@ -205,6 +207,8 @@ class Reader:
         require(target.scheme == "https" and target.hostname == "storage.yandexcloud.net"
                 and target.port in (None, 443) and not target.username and not target.password)
         require(self.attempts < MAX_LISTS + MAX_GETS)
+        require(self.sent_in_call == 0)
+        self.sent_in_call += 1
         self.attempts += 1
 
     def call(self, op, **params):
@@ -218,6 +222,7 @@ class Reader:
         else:
             require(self.gets < MAX_GETS)
             self.gets += 1
+        self.sent_in_call = 0
         return getattr(self.client, op)(Bucket=self.bucket, **params)
 
     def get(self, item):
@@ -239,6 +244,7 @@ class Reader:
                 stream.close()
 
     def page(self, prefix, years=False):
+        require(self.bytes + 1024*1024 <= MAX_BYTES)
         page = self.call("list_objects_v2", Prefix=prefix, MaxKeys=128, **({"Delimiter": "/"} if years else {}))
         require(type(page.get("IsTruncated")) is bool)
         require(len(page.get("Contents", [])) <= 128 and len(page.get("CommonPrefixes", [])) <= 128)
@@ -297,13 +303,14 @@ def collect(reader):
                     candidates.sort(key=lambda o: o["Key"])
                     item = {"source": root[:-1], "gender": gender, "level": level, "year": year,
                             "listing_truncated": page["IsTruncated"], "eligible_observed": len(candidates),
-                            "ineligible_observed": skipped, "files_read": 0}
+                            "ineligible_observed": skipped, "files_read": 0, "decoded_rows": 0}
                     strata.append(item)
                     if candidates:
                         field = "players_json" if root == "nbbet_details/" else "raw_json"
                         for row in decode(reader.get(candidates[len(candidates)//2]), field):
                             reader.check()
                             evidence.observe("details" if field == "players_json" else "raw", year, gender, row)
+                            item["decoded_rows"] += 1
                         item["files_read"] = 1
     reader.check()
     report = evidence.report()

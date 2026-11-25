@@ -199,3 +199,54 @@ def test_workflow_safety():
             assert len(step["uses"].split("@")[1]) == 40
         if "run" in step:
             subprocess.run(["bash", "-n"], input=step["run"], text=True, check=True)
+
+
+def test_no_http_retry_and_prelist_byte_reservation():
+    r = a.Reader(Fake(), "bucket")
+    request = SimpleNamespace(url="https://storage.yandexcloud.net/bucket")
+    r.before_send(request)
+    with pytest.raises(a.Stop):
+        r.before_send(request)
+    f = Fake()
+    r = a.Reader(f, "bucket")
+    r.bytes = a.MAX_BYTES - 100
+    with pytest.raises(a.Stop):
+        r.page("nbbet_details/gender=M/level=tour/")
+    assert not f.calls
+
+
+def test_read_timeout_closes_stream():
+    class TimeoutBody(Body):
+        def read(self, n=-1):
+            raise TimeoutError("synthetic private value")
+    class TimeoutFake(Fake):
+        def get_object(self, **kw):
+            result = super().get_object(**kw)
+            result["Body"] = TimeoutBody(b"")
+            self.bodies.append(result["Body"])
+            return result
+    key = "nbbet_details/gender=M/level=tour/year=2020/a.parquet"
+    f = TimeoutFake({key: fixture()})
+    with pytest.raises(TimeoutError):
+        a.Reader(f, "bucket").get({"Key": key, "Size": len(f.objects[key]), "ETag": "tag"})
+    assert f.bodies[-1].closed
+
+
+def test_strict_literal_configuration():
+    raw = b"\n".join([
+        b"S3_ENDPOINT_URL=https://storage.yandexcloud.net", b"S3_REGION=ru-central1",
+        b"S3_BUCKET=private-bucket", b"S3_ACCESS_KEY_ID='private-access'",
+        b"S3_SECRET_ACCESS_KEY='private-secret'"])
+    assert a.config(raw)["S3_BUCKET"] == "private-bucket"
+    with pytest.raises(a.Stop):
+        a.config(raw.replace(b"storage.yandexcloud.net", b"evil.invalid"))
+
+
+def test_all_scalar_candidate_paths_bounded_and_no_dynamic_keys():
+    e = a.Evidence()
+    e.observe("details", 2020, "M", {"players_json": json.dumps({
+        "p1": {"1": "Secret", "private-source-key": "Private Value", "7": [99999999, 99999998]}})})
+    output = a.encode(e.report())
+    assert "private-source-key" not in output and "Private Value" not in output
+    p = next(p for p in e.report()["paths"] if p["path"] == "field_7.[]")
+    assert p["observations"] == 2 and p["objects_with_path"] == 1
