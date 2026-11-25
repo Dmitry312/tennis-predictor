@@ -120,7 +120,9 @@ matching_rows_observed and rows_truncated make retention explicit. Files are sca
 within decode limits, unmatched rows are not exported. Missing PG, objects, join
 columns, raw data, unplanned history and PBP truncation are distinct.
 coverage_complete is always false: pbp_completeness=1.0 or ingestion status does not
-prove full point history. Additional limits: 128 columns, 128 row groups, bounded
+prove full point history. PostgreSQL JSON is capped server-side at 1 MiB per row (or the smaller output
+budget), with an additional UTF-8 byte check; oversize rows abort, never publish
+truncated JSON. Additional limits: 128 columns, 128 row groups, bounded
 Thrift metadata and batches of 256. Uncompressed bound applies per file/batch.
 
 ## Catalog contract and offline reuse

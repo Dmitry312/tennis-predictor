@@ -258,13 +258,15 @@ def select_ids(connection, ids, limits, *, date_from=None, date_to=None, player=
 def read_pg(connection, ids, limits):
     check_session(connection)
     if not ids: return {}, [], {"candidates":[], "truncated":False}
+    pg_bytes=min(limits.output_bytes,1024*1024)
     with connection.cursor() as c:
-        c.execute("SELECT match_id::text, row_to_json(m)::text FROM public.matches m "
-                  "WHERE match_id = ANY(%s::uuid[]) ORDER BY match_id LIMIT %s",(ids,limits.matches+1))
+        c.execute("SELECT match_id::text, left(row_to_json(m)::text, %s) FROM public.matches m "
+                  "WHERE match_id = ANY(%s::uuid[]) ORDER BY match_id LIMIT %s",(pg_bytes+1,ids,limits.matches+1))
         rows = c.fetchmany(limits.matches+2)
         need(len(rows)<=limits.matches, "sql_row_limit")
         result = {}
         for key, raw in rows:
+            need(type(raw)is str and len(raw.encode("utf-8"))<=pg_bytes,"sql_byte_limit")
             key = mid(key)
             need(key in ids and key not in result, "join_conflict")
             result[key] = json.loads(raw,object_pairs_hook=unique,parse_float=Decimal)
@@ -448,6 +450,7 @@ def publish(root, packages, *, secrets=()):
         need(not index_path.is_symlink(), "unsafe_output_path")
         index=read_json(index_path,1024*1024) if index_path.exists() else {"catalog_version":2,"entries":[],"real_examples":[]}
         need(type(index)is dict and type(index.get("real_examples",[]))is list,"index_invalid")
+        inspect_content(index,secrets)
         staging=Path(tempfile.mkdtemp(prefix=".export-stage-",dir=root))
         try:
             entries={entry["match_id"]:entry for entry in index.get("real_examples",[])}
@@ -466,6 +469,9 @@ def publish(root, packages, *, secrets=()):
                     for name,payload in encoded.items():
                         with (directory/name).open("xb") as stream:
                             stream.write(payload); stream.flush(); os.fsync(stream.fileno())
+                    fd=os.open(directory,os.O_RDONLY|os.O_DIRECTORY)
+                    try: os.fsync(fd)
+                    finally: os.close(fd)
                     os.rename(directory,target)
                 need(key not in entries or entries[key]==entry,"index_conflict")
                 entries[key]=entry
@@ -475,7 +481,10 @@ def publish(root, packages, *, secrets=()):
             index["publication_status"]="owner_approved_real_sports_content_and_rights_review_required"
             index.pop("projection_policy",None)
             index["projection_policies"]={"synthetic":"linked-sanitized-v1","real_examples":"real-sports-original-v1"}
+            inspect_content(index,secrets)
             encoded_index=dumps(index)
+            need(len(encoded_index)<=1024*1024 and total+len(encoded_index)<=
+                 min((item[1]["limits"]["output_bytes"] for item in packages.values()),default=128*1024*1024),"output_limit")
             with (staging/"index.json").open("xb") as stream:
                 stream.write(encoded_index); stream.flush(); os.fsync(stream.fileno())
             os.replace(staging/"index.json",index_path)

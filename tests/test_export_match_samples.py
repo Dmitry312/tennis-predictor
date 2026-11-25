@@ -44,8 +44,8 @@ class PG:
         elif query.startswith("EXPLAIN"):
             self.result = [([{"Plan": self.plan or {"Node Type":"Index Scan", "Relation Name":"matches",
                 "Total Cost":40, "Index Cond":"match_date >= $1", "Plan Rows":5}}],)]
-        elif query.startswith("SELECT match_id::text, row_to_json"):
-            self.result = [(key,json.dumps(row,default=lambda v:float(v) if isinstance(v,Decimal) else str(v))) for key,row in self.rows.items() if key in params[0]]
+        elif query.startswith("SELECT match_id::text, left(row_to_json"):
+            self.result = [(key,json.dumps(row,default=lambda v:float(v) if isinstance(v,Decimal) else str(v))) for key,row in self.rows.items() if key in params[1]]
         elif query.startswith("SELECT column_name"):
             self.result = [("match_id","uuid","uuid",None,None),("odds_open_p1","numeric","numeric",7,3)]
         elif query.startswith("SELECT table_name"):
@@ -430,3 +430,16 @@ def test_process_limits_restore(monkeypatch):
     monkeypatch.setattr(m.signal,"alarm",lambda *_:0)
     with m.bounded_process(120): pass
     assert calls[0][1][0] == 4*1024**3 and calls[-1][1] == previous
+
+
+def test_pg_bytes_are_bounded_before_serialization(tmp_path):
+    with pytest.raises(m.ExportError,match="sql_byte_limit"):
+        m.export(PG(rows={A:{"match_id":A,"notes":"x"*(1024*1024)}}),S3({}),"fixture.bucket",
+                 [A],manifest(),tmp_path,LIMITS,{})
+    assert not (tmp_path/"index.json").exists()
+
+
+def test_existing_index_secrets_are_not_copied(tmp_path):
+    (tmp_path/"index.json").write_text(json.dumps({"real_examples":[],"token":"fixture-secret"}))
+    with pytest.raises(m.ExportError): m.publish(tmp_path,packages())
+    assert not list((tmp_path/"samples").glob("match_*"))
