@@ -45,7 +45,7 @@ class PG:
             self.result = [([{"Plan": self.plan or {"Node Type":"Index Scan", "Relation Name":"matches",
                 "Total Cost":40, "Index Cond":"match_date >= $1", "Plan Rows":5}}],)]
         elif query.startswith("SELECT match_id::text, row_to_json"):
-            self.result = [(key,m.dumps(row).decode()) for key,row in self.rows.items() if key in params[0]]
+            self.result = [(key,json.dumps(row,default=lambda v:float(v) if isinstance(v,Decimal) else str(v))) for key,row in self.rows.items() if key in params[0]]
         elif query.startswith("SELECT column_name"):
             self.result = [("match_id","uuid","uuid",None,None),("odds_open_p1","numeric","numeric",7,3)]
         elif query.startswith("SELECT table_name"):
@@ -108,7 +108,8 @@ def test_full_export_preserves_sports_and_all_versions(tmp_path):
     objects = {s+"/"+version+".parquet":parquet([SPORT,dict(SPORT,canonical_match_id=B)])
                for s in m.SOURCES for version in ("v1","v3")}
     client = S3(objects)
-    result = m.export(PG(),client,"sports.fixture.bucket",[A],manifest(sources),tmp_path,
+    db = PG()
+    result = m.export(db,client,"sports.fixture.bucket",[A],manifest(sources),tmp_path,
                       LIMITS,{"mode":"exact_uuid"})
     assert result["published_matches"] == 1
     records = m.reuse(tmp_path,[A])[A]["records"]
@@ -123,7 +124,7 @@ def test_full_export_preserves_sports_and_all_versions(tmp_path):
     assert all(p["Bucket"] == "sports.fixture.bucket" for _,p in client.calls)
     assert all(p["IfMatch"] == '"fixture"' for op,p in client.calls if op=="GET")
     assert all(s.closed for s in client.streams)
-    assert all(q.lstrip().startswith(("SELECT","EXPLAIN")) for q,_ in PG().sql)
+    assert all(q.lstrip().startswith(("SELECT","EXPLAIN")) for q,_ in db.sql)
 
 
 def test_pg_numeric_schema_and_inventory():
@@ -344,3 +345,88 @@ def test_uuid_and_json_representation():
 @pytest.mark.parametrize("field",list(m.asdict(LIMITS)))
 def test_limits_have_hard_caps(field):
     with pytest.raises(m.ExportError): replace(LIMITS,**{field:10**12}).validate()
+
+
+def test_new_workflow_only_offline_pr_events():
+    import yaml
+    workflow_path = ROOT/".github/workflows/real-match-sample-tests.yml"
+    text = workflow_path.read_text()
+    workflow = yaml.load(text,Loader=yaml.BaseLoader)
+    assert set(workflow["on"]) == {"pull_request"}
+    assert workflow["permissions"] == {"contents":"read"}
+    assert "secrets." not in text and "workflow_dispatch" not in text
+    for job in workflow["jobs"].values():
+        assert int(job["timeout-minutes"]) <= 10
+        for step in job["steps"]:
+            if "uses" in step:
+                assert len(step["uses"].split("@")[1]) == 40
+
+
+def test_real_sdk_exact_manifest_with_dotted_bucket():
+    import boto3
+    from botocore.config import Config
+    from botocore.stub import Stubber
+    from botocore.response import StreamingBody
+    data = parquet([SPORT])
+    client = boto3.client("s3",endpoint_url="https://storage.yandexcloud.net",
+        region_name="ru-central1",aws_access_key_id="fixture-key",
+        aws_secret_access_key="fixture-secret",
+        config=Config(s3={"addressing_style":"path"},retries={"total_max_attempts":1}))
+    plan = m.object_plan(manifest({"pbp":[{"key":"pbp/x.parquet","version_id":"v1"}]}),[A],LIMITS)
+    reader = m.S3Reader(client,"fixture.bucket",plan,m.Budget(LIMITS))
+    with Stubber(client) as stub:
+        stub.add_response("head_object",{"ContentLength":len(data),"ETag":'"tag"',"VersionId":"v1"},
+                          {"Bucket":"fixture.bucket","Key":"pbp/x.parquet","VersionId":"v1"})
+        stub.add_response("get_object",{"ContentLength":len(data),"ETag":'"tag"',"VersionId":"v1",
+            "Body":StreamingBody(io.BytesIO(data),len(data)),"ResponseMetadata":{"HTTPStatusCode":200}},
+            {"Bucket":"fixture.bucket","Key":"pbp/x.parquet","VersionId":"v1","IfMatch":'"tag"'})
+        ident = next(iter(plan))
+        assert reader.read(ident,plan[ident])["rows_by_match"][A] == [SPORT]
+        stub.assert_no_pending_responses()
+
+
+def test_changed_etag_aborts_before_get():
+    plan = m.object_plan(manifest({"pbp":[{"key":"pbp/x.parquet","etag":'"old"'}]}),[A],LIMITS)
+    client = S3({"pbp/x.parquet":parquet([SPORT])})
+    reader = m.S3Reader(client,"fixture.bucket",plan,m.Budget(LIMITS))
+    ident = next(iter(plan))
+    with pytest.raises(m.ExportError,match="object_changed"): reader.read(ident,plan[ident])
+    assert [op for op,_ in client.calls] == ["HEAD"]
+
+
+def test_changed_response_version_closes_body():
+    class Changed(S3):
+        def get_object(self,**params):
+            result = super().get_object(**params)
+            result["VersionId"] = "wrong-version"
+            return result
+    plan = m.object_plan(manifest({"pbp":[{"key":"pbp/x.parquet","version_id":"v1"}]}),[A],LIMITS)
+    client = Changed({"pbp/x.parquet":parquet([SPORT])})
+    reader = m.S3Reader(client,"fixture.bucket",plan,m.Budget(LIMITS))
+    ident = next(iter(plan))
+    with pytest.raises(m.ExportError,match="object_changed"): reader.read(ident,plan[ident])
+    assert client.streams[0].closed
+
+
+def test_hard_budget_deadline_requests_and_duplicates():
+    budget = m.Budget(LIMITS); budget.end = 0
+    with pytest.raises(m.ExportError): budget.check()
+    budget = m.Budget(LIMITS); budget.calls = LIMITS.objects*2
+    with pytest.raises(m.ExportError): budget.charge()
+    with pytest.raises(m.ExportError):
+        m.object_plan(manifest({"pbp":[{"key":"pbp/x.parquet","etag":"one"},
+                                       {"key":"pbp/x.parquet","etag":"two"}]}),[A],LIMITS)
+    with pytest.raises(m.ExportError): m.unique([("x",1),("x",2)])
+
+
+def test_process_limits_restore(monkeypatch):
+    import resource
+    calls = []
+    previous = (resource.RLIM_INFINITY,resource.RLIM_INFINITY)
+    monkeypatch.setattr(resource,"getrlimit",lambda *_:previous)
+    monkeypatch.setattr(resource,"setrlimit",lambda *args:calls.append(args))
+    monkeypatch.setattr(m.signal,"getsignal",lambda *_:m.signal.SIG_DFL)
+    monkeypatch.setattr(m.signal,"signal",lambda *_:None)
+    monkeypatch.setattr(m.signal,"alarm",lambda *_:0)
+    with m.bounded_process(120): pass
+    assert calls[0][1][0] == 4*1024**3 and calls[-1][1] == previous
