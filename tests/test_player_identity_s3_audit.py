@@ -368,3 +368,141 @@ def test_decode_missing_field_and_output_stage():
     with pytest.raises(a.Diagnostic) as caught:
         a.encode({"x": "x"*a.MAX_OUTPUT})
     assert caught.value.stage == "output" and caught.value.reason == "output_limit"
+
+
+def writer_fixture(version=3, source="details", empty=False):
+    """Use actual details_to_rows and actual Parquet writer, no production IO."""
+    import pandas as pd
+    from tennis_predictor.ingestion.nbbet.details import MatchDetails, details_to_rows
+    from tennis_predictor.ingestion.nbbet.pbp_frames import write_parquet_to_s3
+    player = {"1": "Synthetic Private Name", "7": 999999991}
+    details = MatchDetails(nbbet_match_id=999999992, status=3, has_coverage=True,
+        sets=[], players=None if empty else {"p1": player, "p2": player},
+        raw_page_tennis_event=None if empty else {"match": {"3": player, "5": player}})
+    det, _, raw = details_to_rows(details, "synthetic-private-id")
+    det["details_version"] = version
+    if version == 1:
+        for k in ("players_json", "p1_rank", "p2_rank", "p1_rank_tour", "p2_rank_tour"):
+            det.pop(k, None)
+    row = det if source == "details" else raw
+    row["fetched_at"] = __import__("datetime").datetime(2026, 1, 1)
+    class Sink:
+        data = None
+        def put_object(self, **kw):
+            self.data = kw["Body"].getvalue()
+    sink = Sink()
+    write_parquet_to_s3(pd.DataFrame([row]), sink, "synthetic", "synthetic", dry_run=False)
+    return sink.data
+
+
+@pytest.mark.parametrize("version", [2, 3])
+def test_actual_details_writer(version):
+    rows = a.decode(writer_fixture(version), "players_json", source="nbbet_details")
+    assert len(rows) == 1 and isinstance(rows[0]["players_json"], str)
+
+
+def test_actual_raw_writer():
+    rows = a.decode(writer_fixture(source="raw"), "raw_json", source="nbbet_raw")
+    assert isinstance(rows[0]["raw_json"], str)
+
+
+@pytest.mark.parametrize("source,field", [("details", "players_json"), ("raw", "raw_json")])
+def test_actual_writer_null_columns(source, field):
+    with pytest.raises(a.Diagnostic) as caught:
+        a.decode(writer_fixture(source=source, empty=True), field, source="nbbet_"+source)
+    assert caught.value.decode_subreason == "null_column"
+
+
+def test_legacy_v1_details_missing_column():
+    with pytest.raises(a.Diagnostic) as caught:
+        a.decode(writer_fixture(1), "players_json", source="nbbet_details")
+    r = a.failure_report(caught.value)
+    assert r["stage"] == "decode" and r["reason"] == "unsupported_schema"
+    assert r["decode_subreason"] == "missing_column" and r["source"] == "nbbet_details"
+    assert "synthetic-private-id" not in json.dumps(r)
+
+
+@pytest.mark.parametrize("dtype", [pa.string(), pa.large_string()])
+def test_arrow_string_storage_variants(dtype):
+    b = io.BytesIO()
+    pq.write_table(pa.table({"players_json": pa.array(['{"p1":{}}'], type=dtype)}), b)
+    assert len(a.decode(b.getvalue(), "players_json")) == 1
+
+
+def test_unsupported_type_and_duplicate_columns():
+    b = io.BytesIO()
+    pq.write_table(pa.table({"players_json": [77777777]}), b)
+    with pytest.raises(a.Diagnostic) as caught:
+        a.decode(b.getvalue(), "players_json", source="nbbet_details")
+    assert caught.value.decode_subreason == "unsupported_column_type"
+    b = io.BytesIO()
+    pq.write_table(pa.Table.from_arrays([pa.array(["x"]), pa.array(["y"])],
+                                       names=["players_json", "players_json"]), b)
+    with pytest.raises(a.Diagnostic) as caught:
+        a.decode(b.getvalue(), "players_json")
+    assert caught.value.decode_subreason == "duplicate_column"
+
+
+@pytest.mark.parametrize("exception,subreason", [
+    (pa.ArrowInvalid("PRIVATE"), "arrow_invalid"),
+    (pa.ArrowNotImplementedError("PRIVATE"), "arrow_not_implemented")])
+def test_arrow_exception_subreasons(monkeypatch, exception, subreason):
+    def fail(*args, **kwargs):
+        raise exception
+    data = fixture()
+    monkeypatch.setattr(pq, "ParquetFile", fail)
+    with pytest.raises(a.Diagnostic) as caught:
+        a.decode(data, "raw_json", source="nbbet_raw")
+    r = a.failure_report(caught.value)
+    assert r["source"] == "nbbet_raw" and r["decode_subreason"] == subreason
+    assert "PRIVATE" not in json.dumps(r)
+
+
+def test_mixed_legacy_and_current_skips_are_explicit():
+    objects = {
+        "nbbet_details/gender=M/level=tour/year=2016/a.parquet": writer_fixture(1),
+        "nbbet_details/gender=M/level=tour/year=2026/a.parquet": writer_fixture(3),
+        "nbbet_raw/gender=M/level=tour/year=2026/a.parquet": writer_fixture(source="raw", empty=True)}
+    r = a.Reader(Fake(objects), "bucket")
+    report = a.collect(r)
+    assert report["bounded_scan_finished"] and not report["complete"]
+    assert report["schema_compatible"] is False
+    assert report["skipped_schemas"]["nbbet_details"] == {"missing_column": 1}
+    assert report["skipped_schemas"]["nbbet_raw"] == {"null_column": 1}
+    assert report["decoded_rows"] == 1 and r.gets == 3
+    output = a.encode(report)
+    for value in ("Synthetic Private Name", "999999991", "synthetic-private-id", "a.parquet"):
+        assert value not in output
+
+
+def test_corruption_and_metadata_limits_do_not_skip():
+    key = "nbbet_details/gender=M/level=tour/year=2026/a.parquet"
+    for data, expected in [(b"PAR1bad-footerPAR1", "arrow_invalid"),
+                            (fixture(rows=257), "metadata_limit")]:
+        with pytest.raises(a.Diagnostic) as caught:
+            a.collect(a.Reader(Fake({key: data}), "bucket"))
+        assert caught.value.source == "nbbet_details"
+        assert caught.value.decode_subreason == expected
+
+
+def test_unknown_source_and_subreason_are_redacted():
+    report = a.failure_report(a.Diagnostic("decode", "unsupported_schema",
+        source="PRIVATE", decode_subreason="PRIVATE"))
+    assert report["source"] == "unknown" and report["decode_subreason"] == "unknown"
+    assert "PRIVATE" not in json.dumps(report)
+
+
+def test_main_skipped_schema_exits_nonzero(monkeypatch, capsys):
+    monkeypatch.setattr(a.signal, "signal", lambda *args: None)
+    monkeypatch.setattr(a.signal, "alarm", lambda *args: None)
+    monkeypatch.setattr(a, "resource_limits", lambda: None)
+    monkeypatch.setattr(a, "dependencies", lambda: None)
+    monkeypatch.setattr(a, "read_config", lambda: {"S3_BUCKET": "synthetic"})
+    client = SimpleNamespace(meta=SimpleNamespace(events=SimpleNamespace(register=lambda *args: None)))
+    monkeypatch.setattr(a, "make_client", lambda values: client)
+    monkeypatch.setattr(a, "collect", lambda reader: {
+        "complete": False, "schema_compatible": False, "bounded_scan_finished": True,
+        "skipped_schemas": {"nbbet_details": {"missing_column": 1}, "nbbet_raw": {}}})
+    assert a.main() == 1
+    report = json.loads(capsys.readouterr().out)
+    assert not report["complete"] and report["skipped_schemas"]["nbbet_details"]["missing_column"] == 1

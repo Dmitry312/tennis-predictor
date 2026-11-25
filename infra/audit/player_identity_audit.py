@@ -30,10 +30,18 @@ class Stop(Exception):
     pass
 
 
+SOURCES = frozenset(("nbbet_details", "nbbet_raw", "unknown"))
+DECODE_SUBREASONS = frozenset(("not_applicable", "missing_column", "null_column",
+    "unsupported_column_type", "duplicate_column", "arrow_invalid", "arrow_not_implemented",
+    "invalid_magic", "metadata_limit", "decoded_size_limit", "unknown"))
+
+
 class Diagnostic(Stop):
-    def __init__(self, stage, reason):
+    def __init__(self, stage, reason, source="unknown", decode_subreason="not_applicable"):
         self.stage = stage if stage in STAGES else "resource"
         self.reason = reason if reason in REASONS else "internal_error"
+        self.source = source if source in SOURCES else "unknown"
+        self.decode_subreason = decode_subreason if decode_subreason in DECODE_SUBREASONS else "unknown"
         super().__init__()
 
 
@@ -92,7 +100,10 @@ def phase(stage):
 def failure_report(exc):
     stage = exc.stage if isinstance(exc, Diagnostic) and exc.stage in STAGES else "resource"
     return {"version": 1, "complete": False, "bounded_scan_finished": False,
-            "error": "identity_audit_unavailable", "stage": stage, "reason": reason(exc)}
+            "error": "identity_audit_unavailable", "stage": stage, "reason": reason(exc),
+            "source": exc.source if isinstance(exc, Diagnostic) and exc.source in SOURCES else "unknown",
+            "decode_subreason": exc.decode_subreason if isinstance(exc, Diagnostic)
+                and exc.decode_subreason in DECODE_SUBREASONS else "not_applicable"}
 
 
 def require(ok, code='validation_failed'):
@@ -340,25 +351,58 @@ class Reader:
 
 
 @phase('decode')
-def decode(data, field):
+def decode(data, field, source="unknown"):
     import pyarrow as pa
     import pyarrow.parquet as pq
-    require(data[:4] == b"PAR1" and data[-4:] == b"PAR1")
-    f = pq.ParquetFile(pa.BufferReader(data), thrift_string_size_limit=262144,
-                       thrift_container_size_limit=4096)
-    m = f.metadata
-    require(m.num_rows <= 256 and m.num_columns <= 64 and m.num_row_groups <= 16)
-    require(sum(m.row_group(i).total_byte_size for i in range(m.num_row_groups)) <= 4*1024*1024)
-    require(field in f.schema_arrow.names, "unsupported_schema")
-    dtype = f.schema_arrow.field(field).type
-    require(pa.types.is_string(dtype) or pa.types.is_large_string(dtype))
-    table = f.read(columns=[field], use_threads=False)
-    require(table.nbytes <= 4*1024*1024)
-    return table.to_pylist()
+
+    def reject(subreason, code="unsupported_schema"):
+        raise Diagnostic("decode", code, source, subreason)
+
+    if data[:4] != b"PAR1" or data[-4:] != b"PAR1":
+        reject("invalid_magic", "validation_failed")
+    try:
+        with pq.ParquetFile(pa.BufferReader(data), thrift_string_size_limit=262144,
+                            thrift_container_size_limit=4096) as f:
+            m = f.metadata
+            if not (m.num_rows <= 256 and m.num_columns <= 64 and m.num_row_groups <= 16):
+                reject("metadata_limit", "budget_exhausted")
+            if sum(m.row_group(i).total_byte_size for i in range(m.num_row_groups)) > 4*1024*1024:
+                reject("metadata_limit", "budget_exhausted")
+            names = f.schema_arrow.names
+            if field not in names:
+                reject("missing_column")
+            if names.count(field) != 1:
+                reject("duplicate_column")
+            dtype = f.schema_arrow.field(field).type
+            if pa.types.is_null(dtype):
+                reject("null_column")
+            if not (pa.types.is_string(dtype) or pa.types.is_large_string(dtype)):
+                reject("unsupported_column_type")
+            table = f.read(columns=[field], use_threads=False)
+            if table.nbytes > 4*1024*1024:
+                reject("decoded_size_limit", "budget_exhausted")
+            return table.to_pylist()
+    except Diagnostic:
+        raise
+    except pa.ArrowNotImplementedError:
+        reject("arrow_not_implemented")
+    except pa.ArrowInvalid:
+        reject("arrow_invalid")
+
+
+def object_rows(reader, item, field, source):
+    try:
+        return decode(reader.get(item), field, source=source)
+    except Diagnostic as exc:
+        # Preserve fixed stage/reason and attach only a known source label.
+        if exc.source == "unknown" and source in SOURCES:
+            exc.source = source
+        raise
 
 
 def collect(reader):
     evidence, strata = Evidence(), []
+    skipped_schemas = {source: {} for source in ("nbbet_details", "nbbet_raw")}
     for root in ROOTS:
         for gender in ("M", "F"):
             for level in ("tour", "challenger"):
@@ -389,11 +433,25 @@ def collect(reader):
                     candidates.sort(key=lambda o: o["Key"])
                     item = {"source": root[:-1], "gender": gender, "level": level, "year": year,
                             "listing_truncated": page["IsTruncated"], "eligible_observed": len(candidates),
-                            "ineligible_observed": skipped, "files_read": 0, "decoded_rows": 0}
+                            "ineligible_observed": skipped, "files_read": 0, "decoded_rows": 0,
+                            "schema_skipped": False}
                     strata.append(item)
                     if candidates:
                         field = "players_json" if root == "nbbet_details/" else "raw_json"
-                        for row in decode(reader.get(candidates[len(candidates)//2]), field):
+                        try:
+                            rows = object_rows(reader, candidates[len(candidates)//2], field, root[:-1])
+                        except Diagnostic as exc:
+                            # Schema inspection succeeded: missing/null/unsupported expected column
+                            # has no usable identity evidence. Never retry or choose an extra object.
+                            if (exc.stage != "decode" or exc.decode_subreason not in
+                                    ("missing_column", "null_column", "unsupported_column_type")):
+                                raise
+                            counts = skipped_schemas[root[:-1]]
+                            counts[exc.decode_subreason] = counts.get(exc.decode_subreason, 0) + 1
+                            item["schema_skipped"] = True
+                            item["decode_subreason"] = exc.decode_subreason
+                            continue
+                        for row in rows:
                             reader.check()
                             evidence.observe("details" if field == "players_json" else "raw", year, gender, row)
                             item["decoded_rows"] += 1
@@ -403,6 +461,8 @@ def collect(reader):
     report.update({"version": 1, "complete": False, "bounded_scan_finished": True,
                    "sampling": "observed_year_extremes_middle_one_small_lexical_middle_file_per_stratum",
                    "population_coverage": "unknown", "strata": strata,
+                   "skipped_schemas": skipped_schemas,
+                   "schema_compatible": not any(skipped_schemas[source] for source in skipped_schemas),
                    "budget": {"lists": reader.lists, "gets": reader.gets, "accounted_bytes": reader.bytes},
                    "unknowns": ["source_id_semantics", "unseen_years_keys_large_files",
                                 "repeated_matches_not_independent", "mapping_key_identity_not_verified"]})
@@ -461,7 +521,7 @@ def main():
         run_stage("configuration", client.meta.events.register, "before-send.s3", reader.before_send)
         report = run_stage("evidence", collect, reader)
         print(encode(report))
-        return 0
+        return 0 if report["schema_compatible"] else 1
     except Exception as exc:
         # Construct output exclusively from fixed enums, never exception text.
         print(json.dumps(failure_report(exc), separators=(",", ":")))

@@ -100,8 +100,8 @@ exhaustion, access denial, missing objects, changed objects, service/transport
 errors, budget exhaustion, output limit and internal error. Exceptions, SDK
 messages/codes, config values, URLs, paths, object keys and payloads are never copied
 into the diagnostic. Nested stages retain the innermost classification.
-No partial evidence is emitted after a failed scan: a failure can occur while
-updating counters, so returning that state could mislead users.
+No partial evidence is emitted after an arbitrary failed scan: a failure can occur while
+updating counters. Issue #56 adds a narrowly defined pre-evidence schema skip described below.
 
 Checks against the existing working production_parquet_row_review.py:
 - Same literal endpoint and region, five S3 settings, existing .env location and
@@ -133,3 +133,62 @@ All prior operation, attempt, byte, row, JSON, memory, output and deadline limit
 remain unchanged. Production workflow/publication and its reviewed-ref/fingerprint
 requirements are unchanged. A future separately approved run can identify the stage;
 this PR neither dispatches it nor promises that one particular cause has been fixed.
+
+## Verified schema compatibility — Issue #56
+
+Evidence examined without a production launch:
+- ML SHA 792ed41d77a02b1a2e59301ea52cd7d429e5512a and existing run
+  45658812692/job 139362718604: decode/unsupported_schema is confirmed, but the
+  old diagnostic cannot distinguish missing column from an Arrow parser failure.
+- details.py:DETAILS_VERSION/details_to_rows and detail_job.py:flush are the writers.
+  The comments explicitly record v2 adding players_json/ranks and v3 adding
+  nbbet_raw/raw_json. Existing documentation in docs/decisions.md records old
+  details_version rows coexisting with refreshed v3 files.
+- The historical details.py snapshot at commit 237cb2445641a72366162d44cc2387dfcc9e1d99
+  already contains v3; earlier versions were imported in a squash. We do not claim
+  byte-for-byte archived v1/v2 fixtures are available from this Git history.
+- docs/manual-parquet-data-dictionary.md is a review protocol, not a populated
+  inventory of identity column types. production_parquet_row_review.py omits both
+  identity JSON columns from its read projection. Neither proves that all historical
+  objects have players_json/raw_json, nor establishes alternative column aliases.
+
+Confirmed mismatch: the audit required players_json in every sampled details file,
+despite documented v1 files lacking it. It also required string storage for every raw
+column, while the actual current writer produces Arrow null when all raw_json values
+are None (raw_row is still a non-empty dict). These cases are now recognized explicitly.
+The failed production object's exact variant remains unconfirmed because no object
+key/schema was exported and no new production access is authorized.
+
+Compatibility contract:
+- Current details v2/v3 players_json and v3 raw_json are strings written by
+  details_to_rows -> pandas DataFrame -> pbp_frames.write_parquet_to_s3.
+  Both Arrow string and large_string are accepted. Parquet dictionary encoding
+  of strings does not require a new semantic alias.
+- Legacy missing expected column, all-null column, and unsupported expected-column
+  storage types yield fixed source/subreason counters, no value coercion or invented
+  fallback names. They may be skipped only after bounded metadata inspection and
+  before mutating identity evidence. No replacement GET, retry or expanded listing.
+- Duplicate expected-column names are fatal. Invalid Parquet, ArrowInvalid and
+  ArrowNotImplementedError are separate fatal subreasons, not interpreted as absence.
+  File/row/group/column/decompression/decoded-byte caps remain fatal, unchanged.
+- Source diagnostics are only nbbet_details, nbbet_raw or unknown.
+  Decode subreasons: missing_column, null_column, unsupported_column_type,
+  duplicate_column, arrow_invalid, arrow_not_implemented, invalid_magic,
+  metadata_limit, decoded_size_limit, unknown, not_applicable. No schema fragments,
+  arbitrary type strings, keys or exception messages are printed.
+- Reports with safe schema skips retain complete=false, include skipped_schemas
+  by allowlisted source/subreason and schema_skipped in affected strata, and return
+  a nonzero exit status even when bounded_scan_finished=true. files_read counts
+  decoded compatible files; GET budget includes skipped objects. Thus partial
+  evidence cannot silently appear as a compatible/complete population scan.
+- Other failures still discard partial evidence and return a fixed failure report.
+
+Tests use the actual current details_to_rows and write_parquet_to_s3 functions with
+an in-memory fake sink; no real S3 writes. Synthetic legacy v1/v2 variants are based
+on documented field additions, not asserted archived production schemas. Tests cover
+writer-produced string/null columns, large strings, missing/duplicate/wrong-type
+columns, Arrow parser/not-implemented errors, malformed files, metadata limits,
+mixed compatible/incompatible strata, redaction, unchanged request caps and exit status.
+No workflow publication changes, migrations, production execution or merge are needed
+to review this PR. An approved future run is still required to establish the precise
+schema variant that caused the prior production failure.
