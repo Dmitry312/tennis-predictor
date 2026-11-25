@@ -250,3 +250,120 @@ def test_all_scalar_candidate_paths_bounded_and_no_dynamic_keys():
     assert "private-source-key" not in output and "Private Value" not in output
     p = next(p for p in e.report()["paths"] if p["path"] == "field_7.[]")
     assert p["observations"] == 2 and p["objects_with_path"] == 1
+
+
+@pytest.mark.parametrize("stage", sorted(a.STAGES))
+def test_fixed_stage_codes_and_redaction(stage):
+    def fail():
+        raise ValueError("SECRET-player-token-object-key-path")
+    with pytest.raises(a.Diagnostic) as caught:
+        a.run_stage(stage, fail)
+    report = a.failure_report(caught.value)
+    assert report["stage"] == stage
+    assert report["reason"] == "internal_error"
+    assert not report["complete"] and not report["bounded_scan_finished"]
+    assert "SECRET" not in json.dumps(report)
+
+
+@pytest.mark.parametrize("exc,reason", [
+    (ImportError("SECRET"), "dependency_unavailable"),
+    (MemoryError("SECRET"), "resource_exhausted"),
+    (PermissionError("SECRET"), "access_denied"),
+    (FileNotFoundError("SECRET"), "not_found"),
+    (TimeoutError("SECRET"), "timeout"),
+    (a.Stop("SECRET"), "validation_failed"),
+    (a.Stop("budget_exhausted"), "budget_exhausted")])
+def test_reason_codes(exc, reason):
+    assert a.reason(exc) == reason
+    assert "SECRET" not in json.dumps(a.failure_report(exc))
+
+
+def test_nested_stage_preserved():
+    def fail():
+        raise a.Stop("unsupported_schema")
+    def outer():
+        a.run_stage("decode", fail)
+    with pytest.raises(a.Diagnostic) as caught:
+        a.run_stage("evidence", outer)
+    assert a.failure_report(caught.value)["stage"] == "decode"
+    assert a.failure_report(a.Diagnostic("SECRET", "SECRET"))["reason"] == "internal_error"
+
+
+def test_realistic_botocore_responses_and_guards():
+    import datetime
+    import boto3
+    from botocore.config import Config
+    from botocore.response import StreamingBody
+    from botocore.stub import Stubber
+    client = boto3.client("s3", endpoint_url="https://storage.yandexcloud.net",
+        region_name="ru-central1", aws_access_key_id="synthetic", aws_secret_access_key="synthetic",
+        config=Config(retries={"total_max_attempts": 1}, s3={"addressing_style": "path"}))
+    reader = a.Reader(client, "synthetic-bucket")
+    client.meta.events.register("before-parameter-build.s3", reader.guard)
+    client.meta.events.register("before-send.s3", reader.before_send)
+    prefix = "nbbet_details/gender=M/level=tour/year=2020/"
+    key, etag, data = prefix+"synthetic.parquet", '"synthetic-etag"', fixture()
+    stub = Stubber(client)
+    stub.add_response("list_objects_v2", {
+        "IsTruncated": False, "Name": "synthetic-bucket", "Prefix": prefix,
+        "MaxKeys": 128, "KeyCount": 1,
+        "Contents": [{"Key": key, "Size": len(data), "ETag": etag,
+                      "LastModified": datetime.datetime(2020, 1, 1, tzinfo=datetime.timezone.utc),
+                      "StorageClass": "STANDARD"}],
+        "ResponseMetadata": {"HTTPStatusCode": 200, "HTTPHeaders": {"x-amz-request-id": "SECRET"}}},
+        {"Bucket": "synthetic-bucket", "Prefix": prefix, "MaxKeys": 128})
+    stream = StreamingBody(io.BytesIO(data), len(data))
+    stub.add_response("get_object", {"Body": stream, "ContentLength": len(data), "ETag": etag,
+        "ResponseMetadata": {"HTTPStatusCode": 200}},
+        {"Bucket": "synthetic-bucket", "Key": key, "IfMatch": etag})
+    with stub:
+        page = reader.page(prefix)
+        assert len(a.decode(reader.get(page["Contents"][0]), "players_json")) == 1
+        stub.assert_no_pending_responses()
+
+
+@pytest.mark.parametrize("status,reason", [(403, "access_denied"), (404, "not_found"), (412, "object_changed"), (500, "service_error")])
+def test_sdk_error_redaction(status, reason):
+    from botocore.exceptions import ClientError
+    exc = ClientError({"Error": {"Code": "SECRET", "Message": "SECRET"},
+                       "ResponseMetadata": {"HTTPStatusCode": status}}, "GetObject")
+    def fail():
+        raise exc
+    with pytest.raises(a.Diagnostic) as caught:
+        a.run_stage("get", fail)
+    assert a.failure_report(caught.value)["reason"] == reason
+    assert "SECRET" not in json.dumps(a.failure_report(caught.value))
+
+
+def test_dotted_bucket_compatibility_and_ip_rejection():
+    raw = b"\n".join([b"S3_ENDPOINT_URL=https://storage.yandexcloud.net", b"S3_REGION=ru-central1",
+        b"S3_BUCKET=synthetic.bucket", b"S3_ACCESS_KEY_ID=synthetic", b"S3_SECRET_ACCESS_KEY=synthetic"])
+    assert a.config(raw)["S3_BUCKET"] == "synthetic.bucket"
+    with pytest.raises(a.Diagnostic):
+        a.config(raw.replace(b"synthetic.bucket", b"127.0.0.1"))
+    with pytest.raises(a.Diagnostic):
+        a.config(raw.replace(b"synthetic.bucket", b"synthetic..bucket"))
+
+
+@pytest.mark.parametrize("failure_stage", sorted(a.STAGES))
+def test_main_pipeline_redacts_failure(monkeypatch, capsys, failure_stage):
+    import types
+    monkeypatch.setattr(a.signal, "signal", lambda *x: None)
+    monkeypatch.setattr(a.signal, "alarm", lambda *x: None)
+    def failing():
+        raise a.Diagnostic(failure_stage, "validation_failed")
+    monkeypatch.setattr(a, "resource_limits", failing)
+    assert a.main() == 1
+    report = json.loads(capsys.readouterr().out)
+    assert report["stage"] == failure_stage
+    assert report["reason"] == "validation_failed"
+    assert not report["complete"]
+
+
+def test_decode_missing_field_and_output_stage():
+    with pytest.raises(a.Diagnostic) as caught:
+        a.decode(fixture(), "raw_json")
+    assert caught.value.stage == "decode" and caught.value.reason == "unsupported_schema"
+    with pytest.raises(a.Diagnostic) as caught:
+        a.encode({"x": "x"*a.MAX_OUTPUT})
+    assert caught.value.stage == "output" and caught.value.reason == "output_limit"
