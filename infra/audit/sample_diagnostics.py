@@ -2,7 +2,7 @@
 from contextlib import contextmanager
 import sys
 
-STAGES = frozenset(("runner_preflight","runner_request","catalog_progress","publication_validation","github_publication","host_scan","host_verify",
+STAGES = frozenset(("runner_preflight","runner_request","plan_operation","operation_batch","catalog_progress","publication_validation","github_publication","host_scan","host_verify",
     "ssh_transport","remote_entry","remote_runtime","remote_bootstrap","remote_dependencies",
     "remote_config","dependency_psycopg2","dependency_boto3","dependency_pyarrow","postgres_connect","postgres_close","postgres_session","postgres_selection","postgres_rows",
     "source_manifest","s3_client","s3_read","s3_head","s3_get","parquet_decode",
@@ -41,6 +41,11 @@ def reason(stage, exc):
         args=getattr(exc,"args",())
         code=args[0] if len(args)==1 and type(args[0])is str else ""
         fixed={
+            "operation_limit":"output_limit","operation_archive_limit":"byte_limit",
+            "operation_archive_changed":"stage_changed","operation_batch_failed":"upstream_failed",
+            "operation_slice_invalid":"content_invalid","operation_plan_changed":"content_invalid",
+            "operation_incomplete":"content_invalid","operation_usage_invalid":"content_invalid",
+            "operation_baseline_changed":"catalog_invalid","operation_workspace":"permission_denied",
             "pending_sample_pr":"pending_sample_pr","first20_complete":"first20_complete",
             "ambiguous_selection_plan":"ambiguous_plan","selection_plan_required":"catalog_invalid",
             "noncontiguous_catalog":"catalog_invalid","baseline_catalog_missing":"catalog_invalid","publication_policy_invalid":"content_invalid",

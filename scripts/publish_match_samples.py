@@ -109,7 +109,7 @@ def prepare(archive,checkout,source_sha,stage_ticket,approval):
     return prepare_validated(archive,checkout,source_sha,stage_ticket,{"review":approval})
 
 
-def publish_prepared(api,files,source_sha,stage_ticket,description,*,automatic=False):
+def publish_prepared(api,files,source_sha,stage_ticket,description,*,automatic=False,branch=None):
     ticket(stage_ticket)
     e.need(re.fullmatch("[a-f0-9]{40}",source_sha) and type(files)is dict and files,"publication_invalid")
     for path,data in files.items():
@@ -117,7 +117,8 @@ def publish_prepared(api,files,source_sha,stage_ticket,description,*,automatic=F
                path.endswith(".json"),"publication_path")
         e.inspect_content(json.loads(data,object_pairs_hook=e.unique),(getattr(api,"token",""),))
     if automatic: e.need(not pending_samples(api),"pending_sample_pr")
-    branch="samples/first20-"+stage_ticket
+    branch=branch or ("samples/first20-"+stage_ticket)
+    e.need(re.fullmatch(r"samples/first20-[a-z0-9-]+",branch),"publication_path")
     current=api.call("GET","git/ref/heads/ML")
     e.need(current["object"]["sha"]==source_sha,"ml_changed_before_publication")
     e.need(api.call("GET","git/ref/heads/"+branch) is None,"sample_branch_exists")
@@ -159,10 +160,16 @@ def publish_automatic(api,archive,checkout,source_sha,stage_ticket):
 
 def main():
     try:
-        with Path(os.environ["SAMPLE_ARCHIVE"]).open("rb") as stream: data=stream.read(LIMIT+1)
-        e.need(len(data)<=LIMIT,"publication_input_limit")
+        if sys.argv[1:]!=["--operation"]:
+            with Path(os.environ["SAMPLE_ARCHIVE"]).open("rb") as stream: data=stream.read(LIMIT+1)
+            e.need(len(data)<=LIMIT,"publication_input_limit")
         api=GitHub(os.environ["GITHUB_REPOSITORY"],os.environ["GH_TOKEN"])
-        if sys.argv[1:]==["--automatic"]:
+        if sys.argv[1:]==["--operation"]:
+            from scripts.sample_operation import publish_operation, bounded_runner
+            with bounded_runner(180):
+                result=publish_operation(api,os.environ["OPERATION_DIR"],ROOT,
+                                         os.environ["REVIEWED_SHA"],os.environ["STAGE_TICKET"])
+        elif sys.argv[1:]==["--automatic"]:
             result=publish_automatic(api,data,ROOT,os.environ["REVIEWED_SHA"],os.environ["STAGE_TICKET"])
         else:
             e.need(not sys.argv[1:],"publication_arguments")
