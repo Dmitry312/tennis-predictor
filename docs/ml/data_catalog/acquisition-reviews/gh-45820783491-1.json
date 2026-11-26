@@ -1,0 +1,66 @@
+{
+  "archive_bytes": 473122,
+  "complete": true,
+  "coverage": "all_requested_ids_represented_not_a_complete_history_claim",
+  "end_offset": 20,
+  "exported_count": 8,
+  "format": "sample-plan-operation-v1",
+  "internal_batches": [
+    {
+      "archive_sha256": "cba234ddf132e345caf19cdc711433ed22055140f54af113638fa288b98c14ec",
+      "count": 5,
+      "offset": 12,
+      "read_usage": {
+        "decoded_rows": 10264,
+        "http_attempts": 29,
+        "s3_bytes": 2029614,
+        "s3_calls": 29
+      },
+      "receipt": "docs/ml/data_catalog/acquisition-reviews/gh-45820783491-1-batch-000.json"
+    },
+    {
+      "archive_sha256": "916ba1ca040e2008ad8d77a7d05e5d10d1e8abe8aa25bff3b0a6939c42cef79e",
+      "count": 3,
+      "offset": 17,
+      "read_usage": {
+        "decoded_rows": 8131,
+        "http_attempts": 17,
+        "s3_bytes": 1087875,
+        "s3_calls": 17
+      },
+      "receipt": "docs/ml/data_catalog/acquisition-reviews/gh-45820783491-1-batch-001.json"
+    }
+  ],
+  "limits": {
+    "archive_bytes": 268435456,
+    "batches": 4,
+    "memory_bytes": 2147483648,
+    "output_bytes": 134217728,
+    "private_storage_bytes": 536870912,
+    "seconds": 1200
+  },
+  "operation_id": "a5701ce10226f164bb94d368140332dd8b2e88c17f117371f488423d34194a19",
+  "plan_selected_count": 20,
+  "plan_sha256": "2c161258d768f17a129cb5643754f972524a2f2ea32f5104a23b23da8a44d34c",
+  "publication_policy": {
+    "content_eligibility_responsibility": "project_owner",
+    "content_guard": "required_fail_closed",
+    "owner_decision_date": "2026-11-26",
+    "per_batch_manual_attestations": false,
+    "policy_id": "owner-public-sports-2026-11-26",
+    "retain_original_sports_values": true,
+    "scope": "ordinary_sports_records_in_public_tennis_predictor",
+    "third_party_redistribution_rights": "not_certified_by_repository_owner_permission"
+  },
+  "read_usage": {
+    "decoded_rows": 18395,
+    "http_attempts": 46,
+    "s3_bytes": 3117489,
+    "s3_calls": 46
+  },
+  "selection_shortfall": 0,
+  "source_commit": "d735023f95007c7ddbe9cb4d519ed9bd5f4b8db1",
+  "start_offset": 12,
+  "target": 20,
+  "third_party_rights": "not_certified_owner_responsibility"
+}

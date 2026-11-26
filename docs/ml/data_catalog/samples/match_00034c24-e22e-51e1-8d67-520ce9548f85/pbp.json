@@ -1,0 +1,122 @@
+{
+  "coverage": "exact_manifest_only_not_all_history",
+  "match_id": "00034c24-e22e-51e1-8d67-520ce9548f85",
+  "silent_version_selection": false,
+  "source": "pbp",
+  "versions": [
+    {
+      "content_sha256": "21aa359c9e2c2113b2b7678e1ac80633b95e575405d21f2c247ceec274fe20ec",
+      "coverage": "decode_limit",
+      "decode_metadata": {
+        "columns": 17,
+        "file_rows": 331559,
+        "row_groups": 1
+      },
+      "decode_reasons": [
+        "metadata_row_limit",
+        "total_rows"
+      ],
+      "etag": "\"99fcc3eca7d77491650a2e40ba55a2c2\"",
+      "last_modified": "2026-09-16 06:38:34+00:00",
+      "matching_rows_observed": 0,
+      "object_key": "pbp/gender=M/level=challenger/year=2026/part-0000.parquet",
+      "object_scan_complete": false,
+      "requested_version": {
+        "current": true,
+        "key": "pbp/gender=M/level=challenger/year=2026/part-0000.parquet"
+      },
+      "row_groups_read": [],
+      "row_groups_skipped": 1,
+      "rows": [],
+      "rows_truncated": 0,
+      "schema": [
+        {
+          "name": "canonical_match_id",
+          "nullable": true,
+          "type": "large_string"
+        },
+        {
+          "name": "gender",
+          "nullable": true,
+          "type": "large_string"
+        },
+        {
+          "name": "level",
+          "nullable": true,
+          "type": "large_string"
+        },
+        {
+          "name": "surface",
+          "nullable": true,
+          "type": "null"
+        },
+        {
+          "name": "set_num",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "game_num",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "point_num",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "server",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "point_winner",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "server_won_point",
+          "nullable": true,
+          "type": "bool"
+        },
+        {
+          "name": "score_server",
+          "nullable": true,
+          "type": "large_string"
+        },
+        {
+          "name": "score_returner",
+          "nullable": true,
+          "type": "large_string"
+        },
+        {
+          "name": "is_break_point",
+          "nullable": true,
+          "type": "bool"
+        },
+        {
+          "name": "is_match_point",
+          "nullable": true,
+          "type": "bool"
+        },
+        {
+          "name": "is_tiebreak",
+          "nullable": true,
+          "type": "bool"
+        },
+        {
+          "name": "point_type",
+          "nullable": true,
+          "type": "large_string"
+        },
+        {
+          "name": "game_complete",
+          "nullable": true,
+          "type": "bool"
+        }
+      ],
+      "version_id": null
+    }
+  ]
+}

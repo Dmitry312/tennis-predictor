@@ -1,0 +1,81 @@
+{
+  "coverage": "exact_manifest_only_not_all_history",
+  "match_id": "00039e3e-7b1f-5ec6-bc8b-d95ee2661c83",
+  "silent_version_selection": false,
+  "source": "nbbet_details",
+  "versions": [
+    {
+      "content_sha256": "d64414c49a483121a2e206cb27cd3ecf22b84e6eaf90e7e379c874d5bca725be",
+      "coverage": "selected_object_only",
+      "decode_metadata": {
+        "columns": 7,
+        "file_rows": 35,
+        "row_groups": 1
+      },
+      "decode_reasons": [],
+      "etag": "\"55f27bab646874b7642a3b2b41025d4f\"",
+      "last_modified": "2026-10-05 21:40:39+00:00",
+      "matching_rows_observed": 1,
+      "object_key": "nbbet_details/gender=F/level=tour/year=2026/part-20261005T211001-00005.parquet",
+      "object_scan_complete": true,
+      "requested_version": {
+        "current": true,
+        "key": "nbbet_details/gender=F/level=tour/year=2026/part-20261005T211001-00005.parquet"
+      },
+      "row_groups_read": [
+        0
+      ],
+      "row_groups_skipped": 0,
+      "rows": [
+        {
+          "canonical_match_id": "00039e3e-7b1f-5ec6-bc8b-d95ee2661c83",
+          "extra_json": "{\"1\": false, \"2\": \"Вилла Лобос (Сан-Паулу)\", \"3\": \"+18°C\", \"4\": \"Пасмурно\"}",
+          "fetched_at": "2026-10-05 21:40:34.293327",
+          "has_coverage": true,
+          "nbbet_match_id": 750496,
+          "sets_json": "[{\"duration\": \"00:52\", \"score_team1\": 4, \"score_team2\": 6, \"tiebreak_score_team1\": null, \"tiebreak_score_team2\": null}, {\"duration\": \"00:44\", \"score_team1\": 2, \"score_team2\": 6, \"tiebreak_score_team1\": null, \"tiebreak_score_team2\": null}]",
+          "status": 3
+        }
+      ],
+      "rows_truncated": 0,
+      "schema": [
+        {
+          "name": "canonical_match_id",
+          "nullable": true,
+          "type": "large_string"
+        },
+        {
+          "name": "nbbet_match_id",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "status",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "has_coverage",
+          "nullable": true,
+          "type": "bool"
+        },
+        {
+          "name": "sets_json",
+          "nullable": true,
+          "type": "large_string"
+        },
+        {
+          "name": "extra_json",
+          "nullable": true,
+          "type": "large_string"
+        },
+        {
+          "name": "fetched_at",
+          "nullable": true,
+          "type": "timestamp[us]"
+        }
+      ],
+      "version_id": null
+    }
+  ]
+}
