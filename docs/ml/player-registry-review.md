@@ -107,8 +107,11 @@ decision carries separate `manual_review` provenance. Neither the collector
 nor the Canonical Layer activates this policy in this branch.
 
 `alias_candidates` remains a lookup of previously reviewed exact names.
-`invalidations(revision)` streams affected dates and IDs, and consumers
-must pin a registry revision so later corrections cannot silently alter an
+`invalidations(revision)` streams affected dates and IDs.
+Index automatic bindings by the returned alias source, gender and exact normalized
+name. `alias_invalidations(revision)` exposes old and new keys so corrections
+can invalidate downstream matches even if they were resolved without a manual event.
+Consumers must pin a registry revision so later corrections cannot silently alter an
 earlier output. This is the integration boundary for PR #93. Canonical
 ingestion and Match Data Store can persist the resolution type and revision
 without changing the registry or recalculating historical features here.

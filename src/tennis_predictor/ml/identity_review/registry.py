@@ -496,9 +496,41 @@ class ReviewedMappings:
             "registry_revision": pin["revision"],
             "registry_token": pin["token"],
             "alias_evidence_revision": candidate["evidence_revision"],
+            "alias_source": source,
+            "alias_gender": row["gender"],
+            "normalized_alias": normalized,
             "owner_approval": policy.owner_approval,
             "observation_sha256": evidence,
         }
+
+    def alias_invalidations(self, revision):
+        """Keys used by downstream rule-resolved observations, including old aliases."""
+        if type(revision) is not int or revision < 1:
+            raise ValueError("Invalid review revision")
+        with closing(connection(self.path)) as db:
+            yield from map(
+                dict,
+                db.execute(
+                    """
+                WITH affected AS (
+                    SELECT a.source, e.gender, e.normalized FROM events e
+                    JOIN alias_review a USING(revision,match_id,side) WHERE e.revision=?
+                    UNION
+                    SELECT a.source, old.gender, old.normalized FROM events e
+                    JOIN events old ON old.match_id=e.match_id AND old.side=e.side
+                      AND old.revision=(SELECT max(prior.revision) FROM events prior
+                        WHERE prior.match_id=e.match_id AND prior.side=e.side AND prior.revision<e.revision)
+                    JOIN alias_review a ON a.revision=old.revision
+                      AND a.match_id=old.match_id AND a.side=old.side
+                    WHERE e.revision=?
+                )
+                SELECT source,gender,normalized FROM affected
+                WHERE source='nbbet' AND gender IS NOT NULL AND normalized IS NOT NULL
+                ORDER BY source,gender,normalized
+            """,
+                    (revision, revision),
+                ),
+            )
 
     def invalidations(self, revision):
         if type(revision) is not int or revision < 1:

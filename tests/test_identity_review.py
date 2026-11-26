@@ -371,6 +371,9 @@ def test_changed_source_quarantines_old_mapping_and_invalidates_both_dates(tmp_p
     event = next(mapping.invalidations(2))
     assert event["day"] == "2024-03-18" and event["previous_day"] == "2024-03-15"
     assert event["previous_player_id"] and event["player_id"] is None
+    assert list(mapping.alias_invalidations(2)) == [
+        {"source": "nbbet", "gender": "M", "normalized": "иванов и."}
+    ]
 
 
 def test_split_exact_homonyms_and_partitioned_review(tmp_path, monkeypatch):
@@ -428,6 +431,13 @@ def test_new_match_resolves_only_approved_exact_alias(tmp_path):
     automatic, opponent = api.resolve_match(new, source="nbbet", policy=policy)
     assert automatic["status"] == "rule_resolved" and automatic["player_id"] == manual["player_id"]
     assert automatic["alias_evidence_revision"] == 1
+    assert list(api.alias_invalidations(1)) == [
+        {
+            "source": automatic["alias_source"],
+            "gender": automatic["alias_gender"],
+            "normalized": automatic["normalized_alias"],
+        }
+    ]
     assert opponent["reason"] == "new_alias"
     assert (
         api.resolve_match(new, source="other", policy=policy)[0]["reason"]
