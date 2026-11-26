@@ -1,0 +1,19 @@
+{
+  "coverage": "exact_manifest_only_not_all_history",
+  "match_id": "00039e3e-7b1f-5ec6-bc8b-d95ee2661c83",
+  "silent_version_selection": false,
+  "source": "nbbet_raw",
+  "versions": [
+    {
+      "coverage": "object_missing",
+      "matching_rows_observed": 0,
+      "object_key": "nbbet_raw/gender=F/level=tour/year=2026/part-20261005T211001-00005.parquet",
+      "requested_version": {
+        "current": true,
+        "key": "nbbet_raw/gender=F/level=tour/year=2026/part-20261005T211001-00005.parquet"
+      },
+      "rows": [],
+      "rows_truncated": 0
+    }
+  ]
+}

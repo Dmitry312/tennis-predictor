@@ -1,0 +1,226 @@
+{
+  "coverage": "exact_primary_key",
+  "match_id": "0001f685-1d22-5b34-980c-7cf4b7a8059d",
+  "rows": [
+    {
+      "championat_match_id": null,
+      "created_at": "2026-09-15T21:49:04.49348",
+      "details_attempted_at": null,
+      "details_attempts": 0,
+      "details_fetched_at": "2026-10-09T20:43:37.71063",
+      "details_version": 3,
+      "duplicate_of": null,
+      "gender": "M",
+      "has_pbp": true,
+      "level": "challenger",
+      "match_date": "2024-09-14",
+      "match_id": "0001f685-1d22-5b34-980c-7cf4b7a8059d",
+      "nbbet_match_id": 577961,
+      "nbbet_slug": "577961-tristan-boyer-karue-sell-prognoz-na-match",
+      "odds_open_captured_at": "2026-10-09T20:43:37.71063",
+      "odds_open_p1": "1.730",
+      "odds_open_p2": "2.050",
+      "odds_open_source": "page",
+      "odds_open_status": 3,
+      "pbp_completeness": 1,
+      "pbp_s3_path": "pbp/gender=M/level=challenger/year=2024/part-0000.parquet",
+      "player1": "Boyer T.",
+      "player2": "Sell K.",
+      "start_ts": "2024-09-14T19:10:00",
+      "status": 3,
+      "surface": "hard",
+      "tournament_name": "ATP Челленджер. Las Vegas"
+    }
+  ],
+  "schema": [
+    {
+      "data_type": "uuid",
+      "name": "match_id",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "uuid"
+    },
+    {
+      "data_type": "character varying",
+      "name": "gender",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "varchar"
+    },
+    {
+      "data_type": "character varying",
+      "name": "level",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "varchar"
+    },
+    {
+      "data_type": "character varying",
+      "name": "tournament_name",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "varchar"
+    },
+    {
+      "data_type": "date",
+      "name": "match_date",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "date"
+    },
+    {
+      "data_type": "character varying",
+      "name": "player1",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "varchar"
+    },
+    {
+      "data_type": "character varying",
+      "name": "player2",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "varchar"
+    },
+    {
+      "data_type": "character varying",
+      "name": "surface",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "varchar"
+    },
+    {
+      "data_type": "integer",
+      "name": "nbbet_match_id",
+      "numeric_precision": 32,
+      "numeric_scale": 0,
+      "udt_name": "int4"
+    },
+    {
+      "data_type": "integer",
+      "name": "championat_match_id",
+      "numeric_precision": 32,
+      "numeric_scale": 0,
+      "udt_name": "int4"
+    },
+    {
+      "data_type": "boolean",
+      "name": "has_pbp",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "bool"
+    },
+    {
+      "data_type": "character varying",
+      "name": "pbp_s3_path",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "varchar"
+    },
+    {
+      "data_type": "timestamp without time zone",
+      "name": "created_at",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "timestamp"
+    },
+    {
+      "data_type": "double precision",
+      "name": "pbp_completeness",
+      "numeric_precision": 53,
+      "numeric_scale": null,
+      "udt_name": "float8"
+    },
+    {
+      "data_type": "smallint",
+      "name": "status",
+      "numeric_precision": 16,
+      "numeric_scale": 0,
+      "udt_name": "int2"
+    },
+    {
+      "data_type": "character varying",
+      "name": "nbbet_slug",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "varchar"
+    },
+    {
+      "data_type": "timestamp without time zone",
+      "name": "details_fetched_at",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "timestamp"
+    },
+    {
+      "data_type": "timestamp without time zone",
+      "name": "details_attempted_at",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "timestamp"
+    },
+    {
+      "data_type": "smallint",
+      "name": "details_attempts",
+      "numeric_precision": 16,
+      "numeric_scale": 0,
+      "udt_name": "int2"
+    },
+    {
+      "data_type": "timestamp without time zone",
+      "name": "start_ts",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "timestamp"
+    },
+    {
+      "data_type": "uuid",
+      "name": "duplicate_of",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "uuid"
+    },
+    {
+      "data_type": "smallint",
+      "name": "details_version",
+      "numeric_precision": 16,
+      "numeric_scale": 0,
+      "udt_name": "int2"
+    },
+    {
+      "data_type": "numeric",
+      "name": "odds_open_p1",
+      "numeric_precision": 7,
+      "numeric_scale": 3,
+      "udt_name": "numeric"
+    },
+    {
+      "data_type": "numeric",
+      "name": "odds_open_p2",
+      "numeric_precision": 7,
+      "numeric_scale": 3,
+      "udt_name": "numeric"
+    },
+    {
+      "data_type": "timestamp without time zone",
+      "name": "odds_open_captured_at",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "timestamp"
+    },
+    {
+      "data_type": "character varying",
+      "name": "odds_open_source",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "varchar"
+    },
+    {
+      "data_type": "smallint",
+      "name": "odds_open_status",
+      "numeric_precision": 16,
+      "numeric_scale": 0,
+      "udt_name": "int2"
+    }
+  ]
+}

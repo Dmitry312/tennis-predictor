@@ -1,0 +1,55 @@
+{
+  "availability": "not_inferred_from_ingestion",
+  "bundle_digest": "ba712090bc6a09aea8a59b6a77e4ccaad9219b6f31ac47eefd5b615048adc0d1",
+  "coverage_complete": false,
+  "files": {
+    "matches.json": "c70e3558bbea3da9161b3240b5593a83c82d60af59bf05df088e8809a1cd6445",
+    "nbbet_details.json": "2d297f0e3034a3af19bbfb350bf1f756132cd299317df967599975b19f7e812f",
+    "nbbet_raw.json": "18a8a4efd8503df796df2ca1d19c756988544bd7b784cc3e1a46c5aa187ea79c",
+    "nbbet_stats.json": "88f55f3d93cefdd2bfe9e9f336c3047022817b3571bf1bde3377c48219adb8c8",
+    "pbp.json": "42797ece764038443ea3775775335bdb23163270d3815ee7a5ecd50c599e0b3a"
+  },
+  "format": "real-match-samples-v1",
+  "json_codec": "repository_json_value_v1_dates_uuid_decimal_as_strings_bytes_base64",
+  "limits": {
+    "file_rows": 100000,
+    "matches": 5,
+    "object_bytes": 8388608,
+    "objects": 100,
+    "output_bytes": 33554432,
+    "seconds": 240,
+    "source_rows": 5000,
+    "total_bytes": 134217728,
+    "total_rows": 300000,
+    "uncompressed_bytes": 134217728
+  },
+  "match_id": "00039e3e-7b1f-5ec6-bc8b-d95ee2661c83",
+  "origin": "real_source_records",
+  "other_match_linked_tables": {
+    "candidates": [],
+    "truncated": false
+  },
+  "publication_policy": {
+    "content_eligibility_responsibility": "project_owner",
+    "content_guard": "required_fail_closed",
+    "owner_decision_date": "2026-11-26",
+    "per_batch_manual_attestations": false,
+    "policy_id": "owner-public-sports-2026-11-26",
+    "retain_original_sports_values": true,
+    "scope": "ordinary_sports_records_in_public_tennis_predictor",
+    "third_party_redistribution_rights": "not_certified_by_repository_owner_permission"
+  },
+  "review": {
+    "content": "automatic_checks_required_before_publication",
+    "owner_public_sports_approval": "2026-11-26",
+    "third_party_rights": "not_certified_owner_responsibility"
+  },
+  "selection": {
+    "batch_offset": 12,
+    "batch_size": 5,
+    "mode": "first20_bounded_diverse",
+    "plan_sha256": "2c161258d768f17a129cb5643754f972524a2f2ea32f5104a23b23da8a44d34c",
+    "selection_shortfall": 0,
+    "target": 20
+  }
+}

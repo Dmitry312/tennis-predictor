@@ -1,0 +1,81 @@
+{
+  "coverage": "exact_manifest_only_not_all_history",
+  "match_id": "0004963d-f247-5440-8e2f-176585d6ccb9",
+  "silent_version_selection": false,
+  "source": "nbbet_details",
+  "versions": [
+    {
+      "content_sha256": "244b6ea0ba90f7d9b78a05d11f43f02ecbbf185262a8d33e6c73e189f5eaf56a",
+      "coverage": "selected_object_only",
+      "decode_metadata": {
+        "columns": 7,
+        "file_rows": 115,
+        "row_groups": 1
+      },
+      "decode_reasons": [],
+      "etag": "\"52c4787cd8302f374a8b2800af19bc99\"",
+      "last_modified": "2026-10-06 18:09:35+00:00",
+      "matching_rows_observed": 1,
+      "object_key": "nbbet_details/gender=M/level=challenger/year=2024/part-20261006T151250-00038.parquet",
+      "object_scan_complete": true,
+      "requested_version": {
+        "current": true,
+        "key": "nbbet_details/gender=M/level=challenger/year=2024/part-20261006T151250-00038.parquet"
+      },
+      "row_groups_read": [
+        0
+      ],
+      "row_groups_skipped": 0,
+      "rows": [
+        {
+          "canonical_match_id": "0004963d-f247-5440-8e2f-176585d6ccb9",
+          "extra_json": null,
+          "fetched_at": "2026-10-06 18:09:33.821276",
+          "has_coverage": true,
+          "nbbet_match_id": 531103,
+          "sets_json": "[{\"duration\": \"00:48\", \"score_team1\": 6, \"score_team2\": 4, \"tiebreak_score_team1\": null, \"tiebreak_score_team2\": null}, {\"duration\": \"01:16\", \"score_team1\": 7, \"score_team2\": 6, \"tiebreak_score_team1\": 7, \"tiebreak_score_team2\": 3}]",
+          "status": 3
+        }
+      ],
+      "rows_truncated": 0,
+      "schema": [
+        {
+          "name": "canonical_match_id",
+          "nullable": true,
+          "type": "large_string"
+        },
+        {
+          "name": "nbbet_match_id",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "status",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "has_coverage",
+          "nullable": true,
+          "type": "bool"
+        },
+        {
+          "name": "sets_json",
+          "nullable": true,
+          "type": "large_string"
+        },
+        {
+          "name": "extra_json",
+          "nullable": true,
+          "type": "large_string"
+        },
+        {
+          "name": "fetched_at",
+          "nullable": true,
+          "type": "timestamp[us]"
+        }
+      ],
+      "version_id": null
+    }
+  ]
+}

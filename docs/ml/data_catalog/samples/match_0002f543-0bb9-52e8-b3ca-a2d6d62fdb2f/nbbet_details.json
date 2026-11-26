@@ -1,0 +1,81 @@
+{
+  "coverage": "exact_manifest_only_not_all_history",
+  "match_id": "0002f543-0bb9-52e8-b3ca-a2d6d62fdb2f",
+  "silent_version_selection": false,
+  "source": "nbbet_details",
+  "versions": [
+    {
+      "content_sha256": "a9cd7266d5370fc6154268fb7d94b0085867b70ddec3d7b87c6a4b6b5b7c516f",
+      "coverage": "selected_object_only",
+      "decode_metadata": {
+        "columns": 7,
+        "file_rows": 49,
+        "row_groups": 1
+      },
+      "decode_reasons": [],
+      "etag": "\"ab283fa08cd20666281c316a33d0f23e\"",
+      "last_modified": "2026-10-05 23:42:13+00:00",
+      "matching_rows_observed": 1,
+      "object_key": "nbbet_details/gender=F/level=challenger/year=2026/part-20261005T211001-00029.parquet",
+      "object_scan_complete": true,
+      "requested_version": {
+        "current": true,
+        "key": "nbbet_details/gender=F/level=challenger/year=2026/part-20261005T211001-00029.parquet"
+      },
+      "row_groups_read": [
+        0
+      ],
+      "row_groups_skipped": 0,
+      "rows": [
+        {
+          "canonical_match_id": "0002f543-0bb9-52e8-b3ca-a2d6d62fdb2f",
+          "extra_json": "{\"1\": false, \"2\": \"Теннисный стадион (Бостад)\", \"3\": \"+21°C\", \"4\": \"Ясно\"}",
+          "fetched_at": "2026-10-05 23:42:09.194689",
+          "has_coverage": true,
+          "nbbet_match_id": 730766,
+          "sets_json": "[{\"duration\": \"01:19\", \"score_team1\": 6, \"score_team2\": 7, \"tiebreak_score_team1\": 5, \"tiebreak_score_team2\": 7}, {\"duration\": \"00:50\", \"score_team1\": 6, \"score_team2\": 3, \"tiebreak_score_team1\": null, \"tiebreak_score_team2\": null}, {\"duration\": \"00:44\", \"score_team1\": 3, \"score_team2\": 6, \"tiebreak_score_team1\": null, \"tiebreak_score_team2\": null}]",
+          "status": 3
+        }
+      ],
+      "rows_truncated": 0,
+      "schema": [
+        {
+          "name": "canonical_match_id",
+          "nullable": true,
+          "type": "large_string"
+        },
+        {
+          "name": "nbbet_match_id",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "status",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "has_coverage",
+          "nullable": true,
+          "type": "bool"
+        },
+        {
+          "name": "sets_json",
+          "nullable": true,
+          "type": "large_string"
+        },
+        {
+          "name": "extra_json",
+          "nullable": true,
+          "type": "large_string"
+        },
+        {
+          "name": "fetched_at",
+          "nullable": true,
+          "type": "timestamp[us]"
+        }
+      ],
+      "version_id": null
+    }
+  ]
+}
