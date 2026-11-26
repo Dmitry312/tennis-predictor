@@ -427,8 +427,11 @@ def test_new_match_resolves_only_approved_exact_alias(tmp_path):
     manual = api.resolve_match(match(1), source="nbbet")[0]
     assert manual["status"] == "verified" and manual["provenance"] == "manual_review"
     new = match(2, "  ИВАНОВ И. ", start_ts="2024-03-16T10:00:00")
-    assert api.resolve_match(new, source="nbbet")[0]["reason"] == "alias_policy_inactive"
-    automatic, opponent = api.resolve_match(new, source="nbbet", policy=policy)
+    assert (
+        api.resolve_match(new, source="nbbet", policy=None)[0]["reason"] == "alias_policy_inactive"
+    )
+    automatic, opponent = api.resolve_match(new, source="nbbet")
+    assert automatic["owner_approval"] == "owner-confirmed-nbbet-name-stability-2026-11-26"
     assert automatic["status"] == "rule_resolved" and automatic["player_id"] == manual["player_id"]
     assert automatic["alias_evidence_revision"] == 1
     assert list(api.alias_invalidations(1)) == [

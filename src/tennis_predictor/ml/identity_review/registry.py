@@ -334,13 +334,16 @@ def import_review(stage, registry, workbook, *, reviewer, recorded_at):
 
 @dataclass(frozen=True)
 class ExactAliasPolicy:
-    """Activation is supplied by the caller only after the owner approves stability."""
+    """Provenance for the owner-approved exact NBBet alias rule."""
 
     owner_approval: str
 
     def __post_init__(self):
         if not isinstance(self.owner_approval, str) or not self.owner_approval.strip():
             raise ValueError("Exact alias policy requires owner approval evidence")
+
+
+NBBET_EXACT_ALIAS_POLICY = ExactAliasPolicy("owner-confirmed-nbbet-name-stability-2026-11-26")
 
 
 def quarantine(reason):
@@ -410,7 +413,7 @@ class ReviewedMappings:
                 )
             )
 
-    def resolve_match(self, row, *, source, policy=None, revision=None):
+    def resolve_match(self, row, *, source, policy=NBBET_EXACT_ALIAS_POLICY, revision=None):
         """Resolve two sides against a single pinned registry snapshot."""
         mid = uuid_text(row["match_id"])
         if policy is not None and not isinstance(policy, ExactAliasPolicy):

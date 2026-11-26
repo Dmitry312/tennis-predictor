@@ -90,13 +90,14 @@ evidence hashes return quarantine.
 
 Consumers use `ReviewedMappings.mapping(match_id, side, observation_sha256=...,
 revision=...)` for a manual mapping and `ReviewedMappings.resolve_match(row,
-source="nbbet", policy=..., revision=...)` for daily ingestion. Pass both sides
+source="nbbet", revision=...)` for daily ingestion. Pass both sides
 together and preserve the source reference. The evidence hash is
 `fingerprint(observation_evidence(source_match_row, side))`.
 
-The policy stays inactive by default. After written owner approval of
-cross-match name stability, integration may explicitly pass
-`ExactAliasPolicy(owner_approval=<decision reference>)`. The rule accepts
+On 2026-11-26 the owner confirmed that NBBet's approved names and initials
+are stable across seasons. The registry interface uses the exact-alias rule
+by default and records this approval in rule-resolved observations. Pass
+`policy=None` for a manual-only lookup. The rule accepts
 only a unique, exact normalized alias approved by a group or alias decision
 in the NBBet and gender scope. It quarantines new or ambiguous aliases,
 rejected or changed reviewed evidence, opposing sides, exact simultaneous

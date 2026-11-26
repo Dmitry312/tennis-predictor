@@ -68,7 +68,7 @@ SOURCE_SCOPE = """CASE WHEN json_type(o.payload,'$.nbbet_match_id')='integer'
 
 QUESTIONS = (
     "Is there an immutable source player ID? What is its documented field and namespace?",
-    "Do names or initials remain stable across years, scripts, editions and provider corrections?",
+    "Which spellings are equivalent across scripts or after source corrections?",
     "Are photos or numeric media path components linked to people or to replaceable media?",
     "What does the nested boolean mean? Are ranking values and timestamps reliable context only?",
     "Can the source reliably distinguish singles, homonyms and conflicting gender classifications?",
