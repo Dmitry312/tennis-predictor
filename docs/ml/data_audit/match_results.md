@@ -1,0 +1,21 @@
+# Scores and outcome
+
+CONFIRMED: all 9 observed sets_json are arrays with score_team1, score_team2, duration and nullable tiebreak_score_team1/2. The set order is list order; team1/team2 align with p1/p2 in raw/details where both exist. [details.py parse_match_page/details_to_rows](../../../src/tennis_predictor/ingestion/nbbet/details.py) copies match["24"] unchanged. Numeric nesting in older synthetic dictionaries is not the real schema observed here. Raw "7"/"8" match won-set counts in five available snapshots; they are not player IDs or independently fetched results.
+
+| Details evidence | Set scores P1:P2 | Status | Score candidate under BO3 hypothesis | Raw independent method | Target disposition |
+|---|---|---:|---|---|---|
+| [00014491 nbbet_details](../data_catalog/samples/match_00014491-b904-5816-bd67-b8d6226351d7/nbbet_details.json) | 6:3, 2:1 | 9 | excluded retirement | 1:0; same upstream snapshot | exclude status 9 |
+| [00025c54 nbbet_details](../data_catalog/samples/match_00025c54-c0ac-50cf-ab44-c344c5131e3c/nbbet_details.json) | 0:6, 5:7 | 3 | P2 | 0:2; same upstream snapshot | candidate only; format/identity/availability unresolved |
+| [0002f543 nbbet_details](../data_catalog/samples/match_0002f543-0bb9-52e8-b3ca-a2d6d62fdb2f/nbbet_details.json) | 6:7 TB 5:7, 6:3, 3:6 | 3 | P2 | unavailable | candidate only; format/identity/availability unresolved |
+| [00034701 nbbet_details](../data_catalog/samples/match_00034701-1b27-54b6-b96f-6d5a6718c9c9/nbbet_details.json) | 1:6, 2:4 | 9 | excluded retirement | 0:1; same upstream snapshot | exclude status 9 |
+| [00035326 nbbet_details](../data_catalog/samples/match_00035326-4450-5d09-b060-86a1f6851e63/nbbet_details.json) | 6:2, 6:0 | 3 | P1 | 2:0; same upstream snapshot | candidate only; format/identity/availability unresolved |
+| [00039e3e nbbet_details](../data_catalog/samples/match_00039e3e-7b1f-5ec6-bc8b-d95ee2661c83/nbbet_details.json) | 4:6, 2:6 | 3 | P2 | unavailable | candidate only; format/identity/availability unresolved |
+| [0004963d nbbet_details](../data_catalog/samples/match_0004963d-f247-5440-8e2f-176585d6ccb9/nbbet_details.json) | 6:4, 7:6 TB 7:3 | 3 | P1 | unavailable | candidate only; format/identity/availability unresolved |
+| [00070fb7 nbbet_details](../data_catalog/samples/match_00070fb7-fcbb-5cdc-ab62-8a72bcf61c1a/nbbet_details.json) | 6:3, 6:4 | 3 | P1 | 2:0; same upstream snapshot | candidate only; format/identity/availability unresolved |
+| [001ed393 nbbet_details](../data_catalog/samples/match_001ed393-59a1-56db-a9f4-bcf0f5d5fa73/nbbet_details.json) | 7:6 TB 7:2, 6:2 | 3 | P1 | unavailable | candidate only; format/identity/availability unresolved |
+
+[Status enum](../../../src/tennis_predictor/ingestion/nbbet/status.py): 1 scheduled, 3 finished, 5 canceled, 8 walkover, 9 retired are present in PG. No status10 awarded example. Two details show incomplete last sets and status9; leading score cannot establish retirement winner. Eleven matches have no score detail. Seven finished scores yield BO3 candidates (not verified training targets). No BO5, deciding match-tiebreak or advantage-decider evidence establishes tournament rules here. Winning two sets alone must not infer BO3 for an arbitrary historical competition. Lookup rules by competition/edition/date, retaining evidence, before calling existing ScoreContract.
+
+[canonical_match.py](../../../src/tennis_predictor/ml/canonical_match.py) requires explicit score keys, best_of, decider and provenance and leaves independently_verified false. Keep these gates. Proposed target_p1_win = 1/0 only for status3, resolved distinct players/orientation, valid terminal sets under evidenced format, no conflicting result snapshots, available result timestamp, and audited version. Otherwise NULL with reason. PBP is not an independent result oracle: missing terminal points/tiebreak scores prevent full reconstruction; see PBP audit. Raw/detail equality proves transformation consistency, not independent result verification.
+
+Duration strings look HH:MM (INFERRED, e.g. 01:19), not decimal hours; preserve original until units and interrupted-match handling are validated. Raw status/sets/side objects can corroborate a decoder but remain one source family.
