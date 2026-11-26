@@ -28,6 +28,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 # Reuse only representation/part-layout primitives, never the raw production driver.
 from infra.audit.full_match_export import json_value, related_partition_keys
+from infra.audit import sample_diagnostics as diag
 
 SOURCES = ("nbbet_details", "nbbet_stats", "pbp", "nbbet_raw")
 FORMAT = "real-match-samples-v1"
@@ -340,17 +341,22 @@ class S3Reader:
         if version is not None: params["VersionId"]=version
         if spec.get("etag"): params["IfMatch"]=spec["etag"]
         self.budget.charge()
-        try: head=self.call("head_object",**params)
-        except Exception as exc:
-            if getattr(exc,"response",{}).get("ResponseMetadata",{}).get("HTTPStatusCode")==404:
-                return {"coverage":"object_missing","object_key":key,"requested_version":spec,"rows":[]}
-            raise ExportError("s3_head_failed") from None
+        with diag.at("s3_head"):
+            try: head=self.call("head_object",**params)
+            except Exception as exc:
+                if getattr(exc,"response",{}).get("ResponseMetadata",{}).get("HTTPStatusCode")==404:
+                    return {"coverage":"object_missing","object_key":key,"requested_version":spec,"rows":[]}
+                diag.emit("s3_head","error",diag.reason("s3_head",exc))
+                failure=ExportError("s3_head_failed")
+                failure._sample_diagnostic_reported=True
+                raise failure from None
         size,tag=head.get("ContentLength"),head.get("ETag")
         need(type(size)is int and 12<=size<=self.budget.limits.object_bytes and type(tag)is str and bool(tag),"object_limit")
         if spec.get("etag"): need(tag==spec["etag"],"object_changed")
         self.budget.charge(size)
         params["IfMatch"]=tag
-        response=self.call("get_object",**params)
+        with diag.at("s3_get"):
+            response=self.call("get_object",**params)
         body=response.get("Body")
         try:
             need(response.get("ResponseMetadata",{}).get("HTTPStatusCode")==200 and
@@ -363,28 +369,29 @@ class S3Reader:
             if body is not None: body.close()
         rows={key:[] for key in entry["match_ids"]}
         totals={key:0 for key in entry["match_ids"]}
-        with pq.ParquetFile(pa.BufferReader(data),thrift_string_size_limit=1024*1024,
-                            thrift_container_size_limit=100000) as f:
-            m=f.metadata
-            need(m.num_rows<=self.budget.limits.file_rows and m.num_columns<=128 and m.num_row_groups<=128,"decode_limit")
-            need(self.budget.rows+m.num_rows<=self.budget.limits.total_rows and
-                 sum(m.row_group(i).total_byte_size for i in range(m.num_row_groups))<=self.budget.limits.uncompressed_bytes,"decode_limit")
-            self.budget.rows+=m.num_rows
-            schema=[{"name":field.name,"type":str(field.type),"nullable":field.nullable} for field in f.schema_arrow]
-            need(len(f.schema_arrow.names)==len(set(f.schema_arrow.names)),"duplicate_column")
-            coverage="selected_object_only"
-            if "canonical_match_id" not in f.schema_arrow.names:
-                coverage="join_column_missing"
-            else:
-                for batch in f.iter_batches(batch_size=256,use_threads=False):
-                    need(batch.nbytes<=self.budget.limits.uncompressed_bytes,"decode_limit")
-                    for row in batch.to_pylist():
-                        try: row_id=mid(row.get("canonical_match_id"))
-                        except ExportError: continue
-                        if row_id in rows:
-                            totals[row_id]+=1
-                            if len(rows[row_id])<self.budget.limits.source_rows: rows[row_id].append(row)
-                    self.budget.check()
+        with diag.at("parquet_decode"):
+            with pq.ParquetFile(pa.BufferReader(data),thrift_string_size_limit=1024*1024,
+                                thrift_container_size_limit=100000) as f:
+                m=f.metadata
+                need(m.num_rows<=self.budget.limits.file_rows and m.num_columns<=128 and m.num_row_groups<=128,"decode_limit")
+                need(self.budget.rows+m.num_rows<=self.budget.limits.total_rows and
+                     sum(m.row_group(i).total_byte_size for i in range(m.num_row_groups))<=self.budget.limits.uncompressed_bytes,"decode_limit")
+                self.budget.rows+=m.num_rows
+                schema=[{"name":field.name,"type":str(field.type),"nullable":field.nullable} for field in f.schema_arrow]
+                need(len(f.schema_arrow.names)==len(set(f.schema_arrow.names)),"duplicate_column")
+                coverage="selected_object_only"
+                if "canonical_match_id" not in f.schema_arrow.names:
+                    coverage="join_column_missing"
+                else:
+                    for batch in f.iter_batches(batch_size=256,use_threads=False):
+                        need(batch.nbytes<=self.budget.limits.uncompressed_bytes,"decode_limit")
+                        for row in batch.to_pylist():
+                            try: row_id=mid(row.get("canonical_match_id"))
+                            except ExportError: continue
+                            if row_id in rows:
+                                totals[row_id]+=1
+                                if len(rows[row_id])<self.budget.limits.source_rows: rows[row_id].append(row)
+                        self.budget.check()
         return {"coverage":coverage,"object_key":key,"requested_version":spec,
                 "etag":tag,"version_id":response.get("VersionId"),"content_sha256":hashlib.sha256(data).hexdigest(),
                 "last_modified":head.get("LastModified"),"schema":schema,"rows_by_match":rows,

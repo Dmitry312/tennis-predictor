@@ -13,6 +13,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from scripts import export_match_samples as e
+from infra.audit import sample_diagnostics as diag
 
 TARGET = 20
 PAGE_SIZE = 128
@@ -62,7 +63,7 @@ def candidate_pool(db, *, pages=MAX_PAGES, after=None):
         params = (cursor, PAGE_SIZE+1) if cursor else (PAGE_SIZE+1,)
         query = ("SELECT match_id::text, gender, level, match_date::text, left(surface,64), "
                  "status, details_version, has_pbp, left(pbp_s3_path,1025), duplicate_of::text "
-                 "FROM public.matches"+where+" ORDER BY match_id LIMIT %s")
+                 "FROM public.matches m"+where+" ORDER BY m.match_id LIMIT %s")
         with db.cursor() as c:
             c.execute("EXPLAIN (FORMAT JSON) "+query, params)
             plans = c.fetchmany(2)
@@ -153,59 +154,65 @@ def acquire(db, client, bucket, output, *, plan=None, supplemental=None,
     limits = limits or e.Limits(matches=5,objects=100,total_bytes=128*1024*1024,seconds=240)
     limits.validate()
     budget = e.Budget(limits)
-    if plan is None:
-        e.need(offset == 0, "resume_requires_selection_plan")
-        pool, discovery = candidate_pool(db,pages=pages,after=after)
-        plan = choose(pool,discovery)
-    else:
-        e.need(after is None, "resume_selection_ambiguous")
-        plan = validate_plan(plan)
-    ids = plan["selected_ids"][offset:offset+batch_size]
-    e.need(ids, "batch_empty")
-    pg, schema, inventory = e.read_pg(db,ids,limits)
-    e.need(all(row.get("level") in ("tour","challenger") and row.get("duplicate_of") is None
-               for row in pg.values()),"selected_scope_changed")
-    if supplemental is not None:
-        e.object_plan(supplemental,plan["selected_ids"],e.Limits(matches=TARGET,objects=100))
-        supplemental = {"manifest_version":1,"matches":{key:value for key,value in
-                        supplemental["matches"].items() if key in ids}}
-    raw_plan, no_paths = source_manifest(pg,ids,supplemental)
-    planned = e.object_plan(raw_plan,ids,limits)
-    reader = e.S3Reader(client,bucket,planned,budget)
+    with diag.at("postgres_selection"):
+        if plan is None:
+            e.need(offset == 0, "resume_requires_selection_plan")
+            pool, discovery = candidate_pool(db,pages=pages,after=after)
+            plan = choose(pool,discovery)
+        else:
+            e.need(after is None, "resume_selection_ambiguous")
+            plan = validate_plan(plan)
+        ids = plan["selected_ids"][offset:offset+batch_size]
+        e.need(ids, "batch_empty")
+    with diag.at("postgres_rows"):
+        pg, schema, inventory = e.read_pg(db,ids,limits)
+        e.need(all(row.get("level") in ("tour","challenger") and row.get("duplicate_of") is None
+                   for row in pg.values()),"selected_scope_changed")
+    with diag.at("source_manifest"):
+        if supplemental is not None:
+            e.object_plan(supplemental,plan["selected_ids"],e.Limits(matches=TARGET,objects=100))
+            supplemental = {"manifest_version":1,"matches":{key:value for key,value in
+                            supplemental["matches"].items() if key in ids}}
+        raw_plan, no_paths = source_manifest(pg,ids,supplemental)
+        planned = e.object_plan(raw_plan,ids,limits)
+        reader = e.S3Reader(client,bucket,planned,budget)
     results = {}
-    for ident, entry in sorted(planned.items(),key=lambda kv:(kv[0][0],kv[0][1],kv[0][2] or "")):
-        result = reader.read(ident,entry)
-        result["selected_match_ids"] = sorted(entry["match_ids"])
-        results[ident] = result
+    with diag.at("s3_read"):
+        for ident, entry in sorted(planned.items(),key=lambda kv:(kv[0][0],kv[0][1],kv[0][2] or "")):
+            result = reader.read(ident,entry)
+            result["selected_match_ids"] = sorted(entry["match_ids"])
+            results[ident] = result
     selection = {"mode":"first20_bounded_diverse", "plan_sha256":e.sha(e.dumps(plan)),
                  "batch_offset":offset, "batch_size":len(ids), "target":TARGET,
                  "selection_shortfall":plan["shortfall"]}
-    packages = e.bundles(ids,pg,schema,inventory,results,selection,limits)
-    summary = {"format":"first20-acquisition-report-v1", "target":TARGET,
-               "selected_count":len(plan["selected_ids"]), "selection_shortfall":plan["shortfall"],
-               "exported_count":len(ids), "batch_offset":offset, "next_offset":offset+len(ids),
-               "plan_sha256":selection["plan_sha256"], "source_commit":None,
-               "current_pointer_unavailable_match_ids":no_paths, "sources":{}, "score_formats":"unverified",
-               "other_linked_pg_tables":inventory,
-               "blockers":["unindexed_or_unknown_other_pg_links_not_exported",
-                           "exact_sibling_candidates_do_not_discover_all_history",
-                           "content_and_source_redistribution_rights_review_required"]}
-    for key, (data, _) in packages.items():
-        summary["sources"][key] = {}
-        for source in e.SOURCES:
-            values = data[source+".json"]
-            versions = values["versions"]
-            summary["sources"][key][source] = {
-                "coverage":values["coverage"], "objects":len(versions),
-                "rows":sum(len(v["rows"]) for v in versions),
-                "truncated_rows":sum(v["rows_truncated"] for v in versions),
-                "object_states":[v["coverage"] for v in versions],
-                "schema_variants":[v.get("schema",[]) for v in versions]}
-    # Inspect control files before publishing any batch.
-    e.inspect_content(plan,secrets)
-    e.inspect_content(summary,secrets)
+    with diag.at("content_validation"):
+        packages = e.bundles(ids,pg,schema,inventory,results,selection,limits)
+        summary = {"format":"first20-acquisition-report-v1", "target":TARGET,
+                   "selected_count":len(plan["selected_ids"]), "selection_shortfall":plan["shortfall"],
+                   "exported_count":len(ids), "batch_offset":offset, "next_offset":offset+len(ids),
+                   "plan_sha256":selection["plan_sha256"], "source_commit":None,
+                   "current_pointer_unavailable_match_ids":no_paths, "sources":{}, "score_formats":"unverified",
+                   "other_linked_pg_tables":inventory,
+                   "blockers":["unindexed_or_unknown_other_pg_links_not_exported",
+                               "exact_sibling_candidates_do_not_discover_all_history",
+                               "content_and_source_redistribution_rights_review_required"]}
+        for key, (data, _) in packages.items():
+            summary["sources"][key] = {}
+            for source in e.SOURCES:
+                values = data[source+".json"]
+                versions = values["versions"]
+                summary["sources"][key][source] = {
+                    "coverage":values["coverage"], "objects":len(versions),
+                    "rows":sum(len(v["rows"]) for v in versions),
+                    "truncated_rows":sum(v["rows_truncated"] for v in versions),
+                    "object_states":[v["coverage"] for v in versions],
+                    "schema_variants":[v.get("schema",[]) for v in versions]}
+        # Inspect control files before publishing any batch.
+        e.inspect_content(plan,secrets)
+        e.inspect_content(summary,secrets)
     budget.check()
-    e.publish(output,packages,secrets=secrets)
+    with diag.at("catalog_write"):
+        e.publish(output,packages,secrets=secrets)
     return plan, summary
 
 
@@ -236,56 +243,65 @@ def run(request, project, reviewed_sha):
     """Called only by streamed reviewed bootstrap; writes archive bytes to a pipe."""
     import os
     import importlib.metadata
-    e.need(os.geteuid() != 0 or request.get("allow_existing_root") is True,"existing_root_review_required")
-    os.environ["OPENBLAS_NUM_THREADS"]="1"
-    os.environ["OMP_NUM_THREADS"]="1"
-    e.need(sys.version_info >= (3,11),"python_version")
-    # Import dependencies only; never import storage.db or ingestion jobs.
-    runtime = {"python":".".join(map(str,sys.version_info[:3])),"packages":{}}
-    for package, minimum in (("psycopg2-binary",(2,9)),("boto3",(1,35)),("pyarrow",(15,0))):
-        import re
-        version = importlib.metadata.version(package)
-        runtime["packages"][package] = version
-        parts = re.match(r"([0-9]+)\.([0-9]+)",version)
-        e.need(parts is not None and tuple(map(int,parts.groups())) >= minimum,"dependency_version")
-    import boto3
-    import psycopg2
-    from botocore.config import Config
-    values = e.config(Path(project)/".env")
+    with diag.at("remote_dependencies"):
+        e.need(os.geteuid() != 0 or request.get("allow_existing_root") is True,"existing_root_review_required")
+        os.environ["OPENBLAS_NUM_THREADS"]="1"
+        os.environ["OMP_NUM_THREADS"]="1"
+        e.need(sys.version_info >= (3,11),"python_version")
+        # Import dependencies only; never import storage.db or ingestion jobs.
+        runtime = {"python":".".join(map(str,sys.version_info[:3])),"packages":{}}
+        for package, minimum in (("psycopg2-binary",(2,9)),("boto3",(1,35)),("pyarrow",(15,0))):
+            with diag.at({"psycopg2-binary":"dependency_psycopg2","boto3":"dependency_boto3","pyarrow":"dependency_pyarrow"}[package]):
+                import re
+                version = importlib.metadata.version(package)
+                runtime["packages"][package] = version
+                parts = re.match(r"([0-9]+)\.([0-9]+)",version)
+                e.need(parts is not None and tuple(map(int,parts.groups())) >= minimum,"dependency_version")
+        import boto3
+        import psycopg2
+        from botocore.config import Config
+    with diag.at("remote_config"):
+        values = e.config(Path(project)/".env")
     db = None
     try:
-        db = psycopg2.connect(host=values["POSTGRES_HOST"],port=int(values["POSTGRES_PORT"]),
-            user=values["POSTGRES_USER"],password=values["POSTGRES_PASSWORD"],dbname=values["POSTGRES_DB"],
-            connect_timeout=3,options="-c default_transaction_read_only=on -c statement_timeout=5000 "
-            "-c lock_timeout=1000 -c timezone=UTC")
-        db.set_session(readonly=True,autocommit=False,isolation_level="REPEATABLE READ")
-        e.check_session(db)
-        with db.cursor() as c:
-            c.execute("SELECT current_setting('server_version_num') LIMIT 1")
-            version_rows = c.fetchmany(2)
-        e.need(len(version_rows)==1,"postgres_version")
-        runtime["postgres_major"] = int(version_rows[0][0])//10000
-        client = boto3.client("s3",endpoint_url=values["S3_ENDPOINT_URL"],region_name=values["S3_REGION"],
-            aws_access_key_id=values["S3_ACCESS_KEY_ID"],aws_secret_access_key=values["S3_SECRET_ACCESS_KEY"],
-            config=Config(connect_timeout=2,read_timeout=3,retries={"total_max_attempts":1},
-                          s3={"addressing_style":"path"}))
+        with diag.at("postgres_connect"):
+            db = psycopg2.connect(host=values["POSTGRES_HOST"],port=int(values["POSTGRES_PORT"]),
+                user=values["POSTGRES_USER"],password=values["POSTGRES_PASSWORD"],dbname=values["POSTGRES_DB"],
+                connect_timeout=3,options="-c default_transaction_read_only=on -c statement_timeout=5000 "
+                "-c lock_timeout=1000 -c timezone=UTC")
+        with diag.at("postgres_session"):
+            db.set_session(readonly=True,autocommit=False,isolation_level="REPEATABLE READ")
+            e.check_session(db)
+            with db.cursor() as c:
+                c.execute("SELECT current_setting('server_version_num') LIMIT 1")
+                version_rows = c.fetchmany(2)
+            e.need(len(version_rows)==1,"postgres_version")
+            runtime["postgres_major"] = int(version_rows[0][0])//10000
+        with diag.at("s3_client"):
+            client = boto3.client("s3",endpoint_url=values["S3_ENDPOINT_URL"],region_name=values["S3_REGION"],
+                aws_access_key_id=values["S3_ACCESS_KEY_ID"],aws_secret_access_key=values["S3_SECRET_ACCESS_KEY"],
+                config=Config(connect_timeout=2,read_timeout=3,retries={"total_max_attempts":1},
+                              s3={"addressing_style":"path"}))
         with e.bounded_process(240), tempfile.TemporaryDirectory(prefix="tennis-samples-") as temp:
             plan, report = acquire(db,client,values["S3_BUCKET"],Path(temp)/"catalog",
                 plan=request.get("plan"),supplemental=request.get("supplemental"),
                 offset=request["offset"],batch_size=request["batch_size"],pages=request["pages"],
                 after=request.get("after"),secrets=(values["POSTGRES_PASSWORD"],
                     values["S3_ACCESS_KEY_ID"],values["S3_SECRET_ACCESS_KEY"]))
-            report["source_commit"] = reviewed_sha
-            report["runtime"] = runtime
-            e.inspect_content(report)
-            payload = make_archive(Path(temp)/"catalog",plan,report)
+            with diag.at("archive"):
+                report["source_commit"] = reviewed_sha
+                report["runtime"] = runtime
+                e.inspect_content(report)
+                payload = make_archive(Path(temp)/"catalog",plan,report)
         if request.get("operation")=="stage":
-            from scripts.review_staging import store
-            metadata=store(payload,request["ticket"],reviewed_sha)
-            print(json.dumps(metadata,sort_keys=True))
+            with diag.at("private_staging"):
+                from scripts.review_staging import store
+                metadata=store(payload,request["ticket"],reviewed_sha)
+                print(json.dumps(metadata,sort_keys=True))
         else:
             sys.stdout.buffer.write(payload)
     finally:
         if db is not None:
-            db.rollback()
-            db.close()
+            with diag.at("postgres_close"):
+                try: db.rollback()
+                finally: db.close()
