@@ -186,3 +186,6 @@ Baseline `500ff871a2c8de19af558170ebe83cabca766d4a`. Inspected committed files (
 - [tests/test_nbbet_stats_crosscheck.py](../../../tests/test_nbbet_stats_crosscheck.py)
 - [tests/test_nbbet_stats_crosscheck_dry_run_workflow.py](../../../tests/test_nbbet_stats_crosscheck_dry_run_workflow.py)
 - [tests/test_sample_operation.py](../../../tests/test_sample_operation.py)
+- [src/tennis_predictor/pipeline/backfill_historical_pbp.py](../../../src/tennis_predictor/pipeline/backfill_historical_pbp.py)
+- [src/tennis_predictor/pipeline/backfill_open_odds.py](../../../src/tennis_predictor/pipeline/backfill_open_odds.py)
+- [src/tennis_predictor/pipeline/mark_duplicates.py](../../../src/tennis_predictor/pipeline/mark_duplicates.py)

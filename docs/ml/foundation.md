@@ -61,3 +61,8 @@ last committed prefix when no durable private checkpoint exists. Report limits,
 missing source history and snapshot differences honestly. Existing Environment
 approval and explicit final merge remain; one-click operation does not broaden
 source permissions or authorize production writes.
+
+
+## Real catalog semantic audit — post PR #86
+
+See [data_audit/README.md](data_audit/README.md) for evidence from all 20 committed real examples, proposed canonical contracts, feature priorities and unresolved coverage/time/identity gates. Run `python scripts/audit_ml_catalog.py` for the deterministic offline JSON report. Contracts remain proposals; no training or canonical ETL is enabled by this audit.
