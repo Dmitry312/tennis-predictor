@@ -35,6 +35,13 @@
       "review_state": "content_and_rights_review_pending"
     },
     {
+      "manifest_sha256": "fcf76211abfb4bb77aaac4e6ce71c0e1dec9eff7bc7e16a27d10aed03da9fbac",
+      "match_id": "00014491-b904-5816-bd67-b8d6226351d7",
+      "origin": "real_source_records",
+      "path": "samples/match_00014491-b904-5816-bd67-b8d6226351d7",
+      "review_state": "automated_content_validation_under_standing_owner_policy"
+    },
+    {
       "manifest_sha256": "44f3cc76e31c2654edc2a87cffa79e994f17f80e9e23b6c10206bced88b9c63c",
       "match_id": "00015aa9-3aec-5c74-a4cc-530822107e82",
       "origin": "real_source_records",
@@ -49,10 +56,38 @@
       "review_state": "automated_content_validation_under_standing_owner_policy"
     },
     {
+      "manifest_sha256": "c7bc42b11f407f181914aeacab39f9dd03d1e8fec85c1af6be0f9368740853a1",
+      "match_id": "00025c54-c0ac-50cf-ab44-c344c5131e3c",
+      "origin": "real_source_records",
+      "path": "samples/match_00025c54-c0ac-50cf-ab44-c344c5131e3c",
+      "review_state": "automated_content_validation_under_standing_owner_policy"
+    },
+    {
+      "manifest_sha256": "71a76d3d7f523c807507af391596333856fd1b2fd2115b5cb1185d7d8401de2e",
+      "match_id": "000275d1-b1c2-5efa-9b6a-dd697844af1c",
+      "origin": "real_source_records",
+      "path": "samples/match_000275d1-b1c2-5efa-9b6a-dd697844af1c",
+      "review_state": "automated_content_validation_under_standing_owner_policy"
+    },
+    {
       "manifest_sha256": "2d3b487fa660cd3d373cd9079495b610652088c5579e292d2e37f3bdaecf3ff0",
       "match_id": "00034701-1b27-54b6-b96f-6d5a6718c9c9",
       "origin": "real_source_records",
       "path": "samples/match_00034701-1b27-54b6-b96f-6d5a6718c9c9",
+      "review_state": "automated_content_validation_under_standing_owner_policy"
+    },
+    {
+      "manifest_sha256": "6d7da7bcded879bf9b1c7342a1f54a3312f548d7ffddea36d76f9ce9ea6c4873",
+      "match_id": "00035326-4450-5d09-b060-86a1f6851e63",
+      "origin": "real_source_records",
+      "path": "samples/match_00035326-4450-5d09-b060-86a1f6851e63",
+      "review_state": "automated_content_validation_under_standing_owner_policy"
+    },
+    {
+      "manifest_sha256": "560eabfad11ec67af4d5c1d1acc57b9bc9593b2bdfe3354499916f77121a943e",
+      "match_id": "00070fb7-fcbb-5cdc-ab62-8a72bcf61c1a",
+      "origin": "real_source_records",
+      "path": "samples/match_00070fb7-fcbb-5cdc-ab62-8a72bcf61c1a",
       "review_state": "automated_content_validation_under_standing_owner_policy"
     },
     {

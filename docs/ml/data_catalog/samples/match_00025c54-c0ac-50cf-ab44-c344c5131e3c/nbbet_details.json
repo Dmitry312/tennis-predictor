@@ -1,0 +1,106 @@
+{
+  "coverage": "exact_manifest_only_not_all_history",
+  "match_id": "00025c54-c0ac-50cf-ab44-c344c5131e3c",
+  "silent_version_selection": false,
+  "source": "nbbet_details",
+  "versions": [
+    {
+      "content_sha256": "19f0a9d15be96a8493cb0d269dba60a35ac0831eb12601c5adfd3a54b0e37cb2",
+      "coverage": "selected_object_only",
+      "etag": "\"3e4a35c5d8e4542bbe4ece1f1a1de67e\"",
+      "last_modified": "2026-10-07 23:57:28+00:00",
+      "matching_rows_observed": 1,
+      "object_key": "nbbet_details/gender=F/level=tour/year=2021/part-20261007T173628-00080.parquet",
+      "requested_version": {
+        "current": true,
+        "key": "nbbet_details/gender=F/level=tour/year=2021/part-20261007T173628-00080.parquet"
+      },
+      "rows": [
+        {
+          "canonical_match_id": "00025c54-c0ac-50cf-ab44-c344c5131e3c",
+          "details_version": 3,
+          "extra_json": null,
+          "fetched_at": "2026-10-07 23:57:28.145762",
+          "has_coverage": true,
+          "nbbet_match_id": 318197,
+          "p1_rank": 101,
+          "p1_rank_tour": "WTA",
+          "p2_rank": 9,
+          "p2_rank_tour": "WTA",
+          "players_json": "{\"p1\": {\"1\": \"Juvan K.\", \"2\": \"https://nb-bet.com/Images/tennis/27/15743729193541.png\", \"3\": true, \"4\": {\"1\": 101, \"2\": \"WTA\"}}, \"p2\": {\"1\": \"Swiatek I.\", \"2\": \"https://nb-bet.com/Images/tennis/20/15743712350581.png\", \"3\": true, \"4\": {\"1\": 9, \"2\": \"WTA\"}}}",
+          "sets_json": "[{\"duration\": \"00:25\", \"score_team1\": 0, \"score_team2\": 6, \"tiebreak_score_team1\": null, \"tiebreak_score_team2\": null}, {\"duration\": \"01:04\", \"score_team1\": 5, \"score_team2\": 7, \"tiebreak_score_team1\": null, \"tiebreak_score_team2\": null}]",
+          "status": 3
+        }
+      ],
+      "rows_truncated": 0,
+      "schema": [
+        {
+          "name": "canonical_match_id",
+          "nullable": true,
+          "type": "large_string"
+        },
+        {
+          "name": "nbbet_match_id",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "status",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "has_coverage",
+          "nullable": true,
+          "type": "bool"
+        },
+        {
+          "name": "sets_json",
+          "nullable": true,
+          "type": "large_string"
+        },
+        {
+          "name": "extra_json",
+          "nullable": true,
+          "type": "null"
+        },
+        {
+          "name": "players_json",
+          "nullable": true,
+          "type": "large_string"
+        },
+        {
+          "name": "p1_rank",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "p2_rank",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "p1_rank_tour",
+          "nullable": true,
+          "type": "large_string"
+        },
+        {
+          "name": "p2_rank_tour",
+          "nullable": true,
+          "type": "large_string"
+        },
+        {
+          "name": "details_version",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "fetched_at",
+          "nullable": true,
+          "type": "timestamp[us]"
+        }
+      ],
+      "version_id": null
+    }
+  ]
+}
