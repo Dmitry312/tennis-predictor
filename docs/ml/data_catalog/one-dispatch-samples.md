@@ -1,0 +1,144 @@
+# One manual dispatch → validated JSON → ML PR — Issue #73
+
+## Normal use
+
+After the implementation workflow is registered on GitHub's default branch and
+available on ML, run **automatic-match-samples.yml** on ML with the exact reviewed
+ML SHA. Initial batch size is 2, maximum 5. The optional selection_plan resolves
+multiple persisted plans; source_manifest supplies independently evidenced exact
+S3 history. Existing root-account reuse still needs the existing explicit opt-in
+when necessary; that is execution privilege control, not a content/rights approval.
+
+One dispatch computes continuation → reads PostgreSQL/S3 → validates → creates
+a dedicated samples/first20-gh-<run>-<attempt> branch and PR into ML. No repeated
+content_reviewed/content_evidence/rights_reviewed/rights_evidence inputs or substitutes,
+manual certificate, archive download, import or separate publication dispatch.
+The project owner's standing decision is recorded once in publication-policy.json
+and ../real-data-review-policy.md. It permits ordinary original sports records;
+it does not establish any third-party licence. Content eligibility remains the
+owner's responsibility; no manifest or receipt claims legal review/certification.
+
+The source job returns a bounded ZIP through pinned SSH, directly into a private
+0600 runner file. There is no plaintext Actions artifact or raw-row log. The
+runner verifies the exact ZIP file set, schemas/manifest hashes, provenance,
+source SHA, plan hash, batch count and automatic secret/contact guards before any
+GitHub content write. Original names, IDs, JSON strings/keys/values, results,
+timestamps, nulls and odds are retained. No anonymization or invented source data.
+
+Publication reuses the immutable catalog merger, preserves synthetic entries and
+existing samples, adds separate matches/details/stats/PBP/raw/manifest JSON files,
+persists the stable plan and a policy/validation receipt. Existing new-ID conflicts,
+already-catalogued IDs, changed ML head or a pending sample PR abort rather than
+overwrite or force-push. No automatic merge occurs. Runner transport bytes are
+removed on success/failure; the default path creates no persistent server review stage.
+
+## Exact PR #72 migration and first-20 continuation
+
+Observed existing successful runs: staging #45770870231 and publication #45773343170
+created PR #72 with two matches. Its head at inspection was
+950a5bf12fdc4cd7c888ef94d4ed6356ed83dc12; it was open/unmerged. The persisted plan is:
+
+    docs/ml/data_catalog/acquisition-plans/2c161258d768f17a129cb5643754f972524a2f2ea32f5104a23b23da8a44d34c.json
+
+It contains 20 selected IDs, no shortfall. This implementation changes none of
+PR #72's sample files, branch or review metadata, and does not merge it.
+
+A coherent canonical index cannot include PR #72's entries before their sample
+files exist on ML without dangling links; copying those files into another PR would
+duplicate its data. Consequently the default checks open samples/first20-* PRs
+BEFORE SSH and blocks while #72 is pending. It does not silently pick another plan.
+Closing the known baseline PR without incorporating its catalog also does not
+silently rediscover the first two samples.
+
+Minimal safe migration: the owner incorporates PR #72 through the normal merge
+process outside this Codex task, and merges this implementation when ready. The
+next dispatch then discovers the tracked plan automatically, verifies committed
+samples/checksums and resumes at offset 2. If other plans also exist, set the
+optional selection_plan path above; it is a path selector, not a new approval.
+No offset, ID list, archive extraction or rights statement needs to be supplied.
+There is no unsafe override that publishes a conflicting index while #72 is pending.
+
+Each later invocation resumes the first missing contiguous plan prefix. Defaults:
+2, 4, 6, ... 18; with maximum-size batches, positions can progress 2, 7, 12, 17.
+Each generated sample PR must be incorporated normally before the next dispatch;
+this is catalog consistency, not an extra per-batch legal/content attestation.
+The workflow never merges a predecessor automatically. Once all 20 selected IDs
+are catalogued it reports first20_complete before source access. Noncontiguous or
+ambiguous catalogs fail closed; the optional path disambiguates an existing plan.
+A genuine bounded-pool shortfall stays explicit rather than inventing more IDs.
+
+## Existing infrastructure, isolation and permissions
+
+Reuses SERVER_HOST, SERVER_USER, SERVER_SSH_KEY, SERVER_HOST_FINGERPRINT and the
+already-accessible server Python/config. No new accounts, source grants, secrets,
+certificates, Docker service, server installation, sudo or production deployment.
+The existing SAMPLES_PROJECT_PATH/compatibility path and root opt-in remain.
+The existing match-sample-review Environment is retained unchanged: its execution
+protection is not a new replacement for removed content/rights fields. This task
+does not inspect or modify administrative protection settings.
+
+The one workflow has one reviewed trusted runner job, with minimal contents:write
+and pull-requests:write needed for its final purpose. Credentials are separated
+by step environments: the read-only GitHub progress lookup and final publisher
+receive GitHub token; the SSH step receives only the four existing SSH secrets.
+Git credentials are not persisted by checkout; SSH key files are deleted by the
+existing transport trap. GH_TOKEN/GITHUB_TOKEN are explicitly removed before
+SSH, never serialized into the reviewed payload or sent to the server. The
+publisher step receives no SSH credentials. This is process/step separation on
+the SAME trusted runner, not a claim of separate-VM isolation. Only the exact
+reviewed ML code and SHA-pinned actions execute; data is parsed as bounded JSON,
+never executed as code. No untrusted PR checkout is used for source access.
+
+No cross-job plaintext artifacts, extra transfer secrets or ephemeral certificate
+provisioning are needed. The original optional two-step workflows remain available
+for an operator who chooses protected staged review or encrypted fallback.
+
+## Source limits and diagnostics are unchanged
+
+The PostgreSQL 16 fix from PR #71 orders by the qualified UUID column, not its text
+output alias. Candidate discovery remains <=4×128 rows plus sentinels, no full
+scan/sort/post-filter plan, at most 20 selected, initial 2/max 5 acquired. Exact
+UUID joins and a stable persisted plan prevent duplicate/resampled first batches.
+
+DB remains read-only repeatable-read with 5s statement timeout, 1s lock timeout,
+3s connect timeout. S3 remains exact HEAD/conditional GET, no LIST or writes,
+no retries, <=100 objects/200 operations, <=8 MiB/object, <=128 MiB input.
+Decode bounds remain 100000 rows/file, 300000 total, 5000 retained per
+match/object/version, 128 MiB uncompressed/file or batch, 128 columns/groups,
+bounded Thrift. PG JSON <=1 MiB/row, catalog <=32 MiB, transport <=64 MiB.
+Address space <=4 GiB; 240s inner deadline, 260s remote +5s kill, 290s SSH,
+10-minute Actions job. No new queries broaden these budgets.
+
+All explicit source versions, content hashes and original records remain separate.
+Missing pointers, objects, joins, rows, raw data, truncation and unknown history
+are reported. The tool cannot discover all S3 history without an evidenced manifest;
+unknown other PostgreSQL links remain inventory, not exported guesses.
+pbp_completeness=1.0 still does not prove complete point history.
+
+PR #71's fixed allowlisted diagnostics and stderr bounds remain. Progress and
+automatic publication add fixed stages; no exception strings, credentials, private
+paths or source rows appear in logs. Automatic checks reject passwords, access
+tokens/keys, private keys, credential URLs and unrelated contact fields including
+embedded JSON. They cannot legally certify a source or perfectly classify all
+free text; the owner is responsible for eligibility decisions. Synthetic tests
+prove implementation behavior, never production score semantics.
+
+## Remaining operational prerequisites and limitations
+
+GitHub requires workflow_dispatch registration on the default branch before
+choosing ML; this PR does not perform that registration merge. Existing runtime,
+source permissions, reviewed SHA and Environment protection must work as before.
+No production dispatch or permission change was performed by Codex.
+
+Repository/org policy must allow GITHUB_TOKEN to create PRs. No PAT or new App
+secret is introduced if policy forbids it; report the blocker instead. PRs created
+with GITHUB_TOKEN generally do not trigger pull_request CI. Integrity/content
+validators run before upload in the automatic workflow; maintainers must arrange
+any separately required PR checks through their existing trusted process. No
+new production or merge workflow is dispatched to work around that limitation.
+
+Open sample PRs serialize catalog changes. A publication API failure after branch
+creation can leave an already validated sample branch; existing names are refused,
+never force-pushed. Inspect that branch and complete its PR through normal recovery.
+No source records are uploaded until automatic checks pass, and no actual records
+were acquired or published while implementing this change.

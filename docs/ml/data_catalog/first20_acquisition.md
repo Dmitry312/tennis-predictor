@@ -1,3 +1,7 @@
+> Issue #73: this document describes the optional legacy/manual path. The default
+> is [one-dispatch-samples.md](one-dispatch-samples.md), with standing owner policy,
+> automatic validation and no per-batch content/rights attestations.
+
 # First-20 samples: private staging, review, automatic PR — Issue #67
 
 The default process no longer needs a new SSH user, certificate, manual encryption,

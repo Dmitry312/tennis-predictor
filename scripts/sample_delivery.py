@@ -112,6 +112,11 @@ def unpack_archive(data, destination):
 def import_reviewed(source, destination, *, content_reviewed=False, rights_reviewed=False):
     """Explicit local integration; preserves original hashes and synthetic entries."""
     need(content_reviewed and rights_reviewed)
+    return import_validated(source,destination)
+
+
+def import_validated(source,destination):
+    """Integrity/content validation only; no assertion of human or legal review."""
     from scripts import export_match_samples as e
     loaded = e.reuse(Path(source)/"catalog")
     packages = {}
