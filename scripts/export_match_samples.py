@@ -367,35 +367,88 @@ class S3Reader:
             need(len(data)==size and data[:4]==b"PAR1" and data[-4:]==b"PAR1","invalid_parquet")
         finally:
             if body is not None: body.close()
+        # Integrity has been verified before any recoverable decode decision.
+        with diag.at("parquet_decode"):
+            decoded = self.decode(data, entry)
+        return {"object_key":key,"requested_version":spec,
+                "etag":tag,"version_id":response.get("VersionId"),"content_sha256":hashlib.sha256(data).hexdigest(),
+                "last_modified":head.get("LastModified"),**decoded}
+
+    def decode(self, data, entry):
+        import pyarrow as pa
+        import pyarrow.parquet as pq
         rows={key:[] for key in entry["match_ids"]}
         totals={key:0 for key in entry["match_ids"]}
-        with diag.at("parquet_decode"):
-            with pq.ParquetFile(pa.BufferReader(data),thrift_string_size_limit=1024*1024,
-                                thrift_container_size_limit=100000) as f:
-                m=f.metadata
-                need(m.num_rows<=self.budget.limits.file_rows and m.num_columns<=128 and m.num_row_groups<=128,"decode_limit")
-                need(self.budget.rows+m.num_rows<=self.budget.limits.total_rows and
-                     sum(m.row_group(i).total_byte_size for i in range(m.num_row_groups))<=self.budget.limits.uncompressed_bytes,"decode_limit")
-                self.budget.rows+=m.num_rows
-                schema=[{"name":field.name,"type":str(field.type),"nullable":field.nullable} for field in f.schema_arrow]
-                need(len(f.schema_arrow.names)==len(set(f.schema_arrow.names)),"duplicate_column")
-                coverage="selected_object_only"
-                if "canonical_match_id" not in f.schema_arrow.names:
-                    coverage="join_column_missing"
-                else:
-                    for batch in f.iter_batches(batch_size=256,use_threads=False):
-                        need(batch.nbytes<=self.budget.limits.uncompressed_bytes,"decode_limit")
-                        for row in batch.to_pylist():
-                            try: row_id=mid(row.get("canonical_match_id"))
-                            except ExportError: continue
-                            if row_id in rows:
-                                totals[row_id]+=1
-                                if len(rows[row_id])<self.budget.limits.source_rows: rows[row_id].append(row)
-                        self.budget.check()
-        return {"coverage":coverage,"object_key":key,"requested_version":spec,
-                "etag":tag,"version_id":response.get("VersionId"),"content_sha256":hashlib.sha256(data).hexdigest(),
-                "last_modified":head.get("LastModified"),"schema":schema,"rows_by_match":rows,
-                "matched_rows":totals}
+        reasons=[]
+        def limited(code):
+            if code not in reasons:
+                reasons.append(code)
+                diag.emit("parquet_decode","skipped",code)
+        with pq.ParquetFile(pa.BufferReader(data),thrift_string_size_limit=1024*1024,
+                            thrift_container_size_limit=100000) as f:
+            m=f.metadata
+            metadata={"file_rows":m.num_rows,"columns":m.num_columns,"row_groups":m.num_row_groups}
+            result={"schema":[],"rows_by_match":rows,"matched_rows":totals,
+                    "decode_metadata":metadata,"decode_reasons":reasons,
+                    "row_groups_read":[],"row_groups_skipped":m.num_row_groups,
+                    "object_scan_complete":False,"coverage":"decode_limit"}
+            # Wide/fragmented metadata is not walked or decoded.
+            if m.num_columns>128: limited("metadata_columns")
+            if m.num_row_groups>128: limited("row_groups")
+            if reasons: return result
+            schema=[{"name":field.name,"type":str(field.type),"nullable":field.nullable} for field in f.schema_arrow]
+            need(len(f.schema_arrow.names)==len(set(f.schema_arrow.names)),"duplicate_column")
+            result["schema"]=schema
+            if "canonical_match_id" not in f.schema_arrow.names:
+                result["coverage"]="join_column_missing"
+                return result
+            if m.num_rows>self.budget.limits.file_rows: limited("metadata_row_limit")
+            if self.budget.rows+m.num_rows>self.budget.limits.total_rows: limited("total_rows")
+            groups=[m.row_group(i) for i in range(m.num_row_groups)]
+            if sum(g.total_byte_size for g in groups)>self.budget.limits.uncompressed_bytes:
+                limited("uncompressed_bytes")
+            file_rows=decoded_bytes=0
+            for i,g in enumerate(groups):
+                self.budget.check()
+                if file_rows+g.num_rows>self.budget.limits.file_rows:
+                    limited("metadata_row_limit"); continue
+                if self.budget.rows+g.num_rows>self.budget.limits.total_rows:
+                    limited("total_rows"); continue
+                if decoded_bytes+g.total_byte_size>self.budget.limits.uncompressed_bytes:
+                    limited("uncompressed_bytes"); continue
+                # Reserve before decoding; failures never refund the shared row budget.
+                self.budget.rows+=g.num_rows
+                file_rows+=g.num_rows
+                group_rows={key:[] for key in rows}
+                group_totals={key:0 for key in rows}
+                actual=0
+                rejected=False
+                for batch in f.iter_batches(batch_size=256,row_groups=[i],use_threads=False):
+                    self.budget.check()
+                    actual+=batch.nbytes
+                    if batch.nbytes>self.budget.limits.uncompressed_bytes or decoded_bytes+actual>self.budget.limits.uncompressed_bytes:
+                        limited("batch_bytes"); rejected=True; break
+                    for row in batch.to_pylist():
+                        try: row_id=mid(row.get("canonical_match_id"))
+                        except ExportError: continue
+                        if row_id in rows:
+                            group_totals[row_id]+=1
+                            if len(rows[row_id])+len(group_rows[row_id])<self.budget.limits.source_rows:
+                                group_rows[row_id].append(row)
+                decoded_bytes+=max(g.total_byte_size,actual)
+                if rejected:
+                    # Discard this entire group; do not present partial iteration as complete.
+                    break
+                for key in rows:
+                    rows[key].extend(group_rows[key])
+                    totals[key]+=group_totals[key]
+                result["row_groups_read"].append(i)
+            result["row_groups_skipped"]=m.num_row_groups-len(result["row_groups_read"])
+            result["object_scan_complete"]=result["row_groups_skipped"]==0
+            result["coverage"]=("selected_object_only" if result["object_scan_complete"] else
+                                "partial_row_groups" if result["row_groups_read"] else "decode_limit")
+            return result
+
 
 
 def bundles(ids, pg, pg_schema, inventory, results, selection, limits):

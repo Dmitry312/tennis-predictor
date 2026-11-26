@@ -8,7 +8,7 @@ STAGES = frozenset(("runner_preflight","runner_request","plan_operation","operat
     "source_manifest","s3_client","s3_read","s3_head","s3_get","parquet_decode",
     "content_validation","catalog_write","archive","private_staging","stage_release",
     "stage_cleanup","runner_capture","diagnostic_channel"))
-REASONS = frozenset(("none","invalid_input","tool_missing","python_version","ssh_settings_missing",
+REASONS = frozenset(("metadata_row_limit","metadata_columns","row_groups","total_rows","uncompressed_bytes","batch_bytes","none","invalid_input","tool_missing","python_version","ssh_settings_missing",
     "root_policy","fingerprint_invalid","project_invalid","request_failed","discovery_failed",
     "timeout","key_count","key_format","fingerprint_mismatch","auth_or_transport_failed",
     "auth_denied","dns_failed","connect_failed","key_invalid","host_key_failed","remote_exit",
