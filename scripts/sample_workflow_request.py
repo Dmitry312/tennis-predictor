@@ -42,6 +42,10 @@ def main():
 
 def execute_request():
         options=parameters(os.environ)
+        if os.environ.get("OPERATION_PLAN_FILE"):
+            e.need(options["operation"]=="automatic","operation_invalid")
+            options["plan_path"]=None
+            options["plan_data"]=e.read_json(os.environ["OPERATION_PLAN_FILE"],1024*1024)
         if options["approval"]:
             # Review metadata only, never raw samples. Used by the isolated publish step.
             with Path(os.environ["REVIEW_FILE"]).open("x") as stream:

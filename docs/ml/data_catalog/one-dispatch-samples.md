@@ -1,3 +1,7 @@
+> Issue #81 supersedes the per-dispatch batch behavior below. Standard dispatch now
+> completes the whole remaining plan and creates one PR. See
+> [plan-operation.md](plan-operation.md) for current operation limits and recovery.
+
 # One manual dispatch → validated JSON → ML PR — Issue #73
 
 ## Normal use
@@ -26,7 +30,8 @@ grant or new server privilege and changes no shared helper or fallback default.
 The existing project-path configuration, SSH secrets, fingerprint and execution
 guards remain. All risk controls, including manual merge, still apply.
 
-One dispatch computes continuation → reads PostgreSQL/S3 → validates → creates
+One dispatch computes the remaining plan → sequentially reads/validates bounded
+PostgreSQL/S3 batches → creates
 a dedicated samples/first20-gh-<run>-<attempt> branch and PR into ML. No repeated
 content_reviewed/content_evidence/rights_reviewed/rights_evidence inputs or substitutes,
 manual certificate, archive download, import or separate publication dispatch.
@@ -76,11 +81,11 @@ optional selection_plan path above; it is a path selector, not a new approval.
 No offset, ID list, archive extraction or rights statement needs to be supplied.
 There is no unsafe override that publishes a conflicting index while #72 is pending.
 
-Each later invocation resumes the first missing contiguous plan prefix. With the
-standard five-match batches, positions progress 2, 7, 12, 17; the final batch then
-contains only the three remaining matches.
-Each generated sample PR must be incorporated normally before the next dispatch;
-this is catalog consistency, not an extra per-batch legal/content attestation.
+One invocation processes every remaining contiguous slice, in batches of at most
+five. With 12/20 already committed, the internal batches are 5+3, followed by one
+final PR. These are not separate user invocations.
+Only the single final sample PR requires normal incorporation. Internal batches
+never create PRs and never require operator participation.
 The workflow never merges a predecessor automatically. Once all 20 selected IDs
 are catalogued it reports first20_complete before source access. Noncontiguous or
 ambiguous catalogs fail closed; the optional path disambiguates an existing plan.

@@ -51,7 +51,7 @@ def progress(checkout,selection_plan=None,batch_size=2):
             "complete":offset==len(selected),"shortfall":plan["shortfall"]}
 
 
-def preflight(api,checkout,source_sha,selection_plan=None,batch_size=2):
+def preflight(api,checkout,source_sha,selection_plan=None,batch_size=2,*,allow_complete=False):
     standing_policy()
     e.need(not pending_samples(api),"pending_sample_pr")
     e.need(api.call("GET","git/ref/heads/ML")["object"]["sha"]==source_sha,"ml_changed_before_publication")
@@ -62,7 +62,7 @@ def preflight(api,checkout,source_sha,selection_plan=None,batch_size=2):
         baseline=api.call("GET","pulls/72")
         if baseline and baseline.get("head",{}).get("ref")=="samples/first20-gh-45770870231-1":
             raise e.ExportError("baseline_catalog_missing")
-    e.need(not result["complete"],"first20_complete")
+    if not allow_complete: e.need(not result["complete"],"first20_complete")
     return result
 
 
@@ -72,10 +72,21 @@ def main():
             e.need(os.environ["REVIEWED_SHA"]==os.environ["SELECTED_SHA"],"reviewed_sha")
             api=GitHub(os.environ["GITHUB_REPOSITORY"],os.environ["GH_TOKEN"])
             result=preflight(api,ROOT,os.environ["REVIEWED_SHA"],os.environ.get("SELECTION_PLAN"),
-                             int(os.environ.get("BATCH_SIZE","2")))
+                             int(os.environ.get("BATCH_SIZE","2")),
+                             allow_complete=os.environ.get("PLAN_OPERATION")=="true")
+            if os.environ.get("PLAN_OPERATION")=="true":
+                if result["complete"]:
+                    with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as summary:
+                        summary.write("Sample plan already complete; no source access or PR required.\n")
+                elif result["plan_path"]:
+                    from scripts.sample_operation import operation_branch
+                    plan=e.read_json(ROOT/result["plan_path"],1024*1024)
+                    branch=operation_branch(os.environ["REVIEWED_SHA"],plan,result["offset"])
+                    e.need(api.call("GET","git/ref/heads/"+branch) is None,"sample_branch_exists")
             # Only validated scalar metadata is persisted, never token or source rows.
             with Path(os.environ["GITHUB_ENV"]).open("a") as output:
-                output.write("BATCH_OFFSET="+str(result["offset"])+"\nPLAN_PATH="+result["plan_path"]+"\n")
+                output.write("BATCH_OFFSET="+str(result["offset"])+"\nPLAN_PATH="+result["plan_path"]+"\n"
+                             +"OPERATION_COMPLETE="+str(result["complete"]).lower()+"\n")
         return 0
     except Exception:
         return 1

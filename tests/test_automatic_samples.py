@@ -167,7 +167,7 @@ def test_default_workflow_is_single_dispatch_without_new_secrets_or_artifacts():
     assert "refs/heads/ML" in job["if"] and job["environment"]=="match-sample-review"
     source=next(v for v in job["steps"] if v.get("env",{}).get("OPERATION")=="automatic")
     assert "GH_TOKEN" not in source["env"] and "GITHUB_TOKEN" not in source["env"]
-    writer=next(v for v in job["steps"] if "--automatic" in v.get("run",""))
+    writer=next(v for v in job["steps"] if "--operation" in v.get("run",""))
     assert not any("SSH" in key for key in writer["env"])
     secrets={value for step in job["steps"] for value in step.get("env",{}).values() if "secrets." in value}
     assert len(secrets)==4

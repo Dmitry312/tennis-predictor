@@ -24,13 +24,14 @@ def document(path):
 
 
 def build(project, sha, offset, batch_size, pages, after=None, plan_path=None, manifest_path=None, operation="download",
-          stage_ticket=None, approval=None, allow_existing_root=False):
+          stage_ticket=None, approval=None, allow_existing_root=False, plan_data=None):
     e.need(re.fullmatch(r"/[A-Za-z0-9_./-]{1,200}",project) is not None
            and ".." not in Path(project).parts and
            (allow_existing_root or (project!="/root" and not project.startswith("/root/"))),"project_path")
     e.need(re.fullmatch("[a-f0-9]{40}",sha) is not None,"reviewed_sha")
     e.need(0<=offset<20 and 1<=batch_size<=5 and 1<=pages<=4,"batch_invalid")
-    plan = document(plan_path)
+    e.need(plan_data is None or not plan_path,"selection_ambiguous")
+    plan = plan_data if plan_data is not None else document(plan_path)
     if plan is not None: a.validate_plan(plan)
     e.need(offset==0 or plan is not None,"resume_requires_selection_plan")
     after=e.mid(after) if after else None

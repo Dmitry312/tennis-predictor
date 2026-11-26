@@ -43,3 +43,21 @@ For the standard sample workflow, batch size 5, dispatch SHA and existing root r
 permission are versioned workflow settings. The persisted plan/catalog determine the
 next position. Source-history manifests and plan disambiguation remain optional
 advanced inputs. Separate legacy fallback workflows retain their own defaults.
+
+
+## One logical operation, one final result — Issue #81, 2026-11-26
+
+One user-requested logical operation maps to one manual dispatch and one final
+PR/report. Internal batching is implementation detail: run bounded batches
+sequentially, infer the next slice from durable state, and do not require the
+operator to repeat dispatch/approval/merge for each internal batch. Publish only
+after every requested slice validates. No intermediate public branches, partial
+catalog commits or automatic merges.
+
+Preserve per-batch read-only limits and provenance while imposing finite aggregate
+time, memory, storage and request budgets. Accumulate only in a private workspace.
+On failure, publish nothing incomplete, clean temporary bytes and restart from the
+last committed prefix when no durable private checkpoint exists. Report limits,
+missing source history and snapshot differences honestly. Existing Environment
+approval and explicit final merge remain; one-click operation does not broaden
+source permissions or authorize production writes.
