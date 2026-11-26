@@ -1,0 +1,106 @@
+{
+  "coverage": "exact_manifest_only_not_all_history",
+  "match_id": "00035326-4450-5d09-b060-86a1f6851e63",
+  "silent_version_selection": false,
+  "source": "nbbet_details",
+  "versions": [
+    {
+      "content_sha256": "3be9eb9ee9460963a36b4762a2b8e726d469a39b4b2badd900af41329f6f6f42",
+      "coverage": "selected_object_only",
+      "etag": "\"d4b6ee2c0a9404d6dc33d2033ffe23c4\"",
+      "last_modified": "2026-10-07 18:56:44+00:00",
+      "matching_rows_observed": 1,
+      "object_key": "nbbet_details/gender=M/level=challenger/year=2022/part-20261007T173628-00016.parquet",
+      "requested_version": {
+        "current": true,
+        "key": "nbbet_details/gender=M/level=challenger/year=2022/part-20261007T173628-00016.parquet"
+      },
+      "rows": [
+        {
+          "canonical_match_id": "00035326-4450-5d09-b060-86a1f6851e63",
+          "details_version": 3,
+          "extra_json": null,
+          "fetched_at": "2026-10-07 18:56:43.734229",
+          "has_coverage": true,
+          "nbbet_match_id": 368682,
+          "p1_rank": 154.0,
+          "p1_rank_tour": "ATP",
+          "p2_rank": 275.0,
+          "p2_rank_tour": "ATP",
+          "players_json": "{\"p1\": {\"1\": \"Кукушкин М.\", \"2\": \"https://nb-bet.com/Images/tennis/18/15743681274241.png\", \"3\": true, \"4\": {\"1\": 154, \"2\": \"ATP\"}}, \"p2\": {\"1\": \"Соеда Г.\", \"2\": \"https://nb-bet.com/Images/tennis/115/15744235115611.png\", \"3\": true, \"4\": {\"1\": 275, \"2\": \"ATP\"}}}",
+          "sets_json": "[{\"duration\": \"00:34\", \"score_team1\": 6, \"score_team2\": 2, \"tiebreak_score_team1\": null, \"tiebreak_score_team2\": null}, {\"duration\": \"00:21\", \"score_team1\": 6, \"score_team2\": 0, \"tiebreak_score_team1\": null, \"tiebreak_score_team2\": null}]",
+          "status": 3
+        }
+      ],
+      "rows_truncated": 0,
+      "schema": [
+        {
+          "name": "canonical_match_id",
+          "nullable": true,
+          "type": "large_string"
+        },
+        {
+          "name": "nbbet_match_id",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "status",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "has_coverage",
+          "nullable": true,
+          "type": "bool"
+        },
+        {
+          "name": "sets_json",
+          "nullable": true,
+          "type": "large_string"
+        },
+        {
+          "name": "extra_json",
+          "nullable": true,
+          "type": "null"
+        },
+        {
+          "name": "players_json",
+          "nullable": true,
+          "type": "large_string"
+        },
+        {
+          "name": "p1_rank",
+          "nullable": true,
+          "type": "double"
+        },
+        {
+          "name": "p2_rank",
+          "nullable": true,
+          "type": "double"
+        },
+        {
+          "name": "p1_rank_tour",
+          "nullable": true,
+          "type": "large_string"
+        },
+        {
+          "name": "p2_rank_tour",
+          "nullable": true,
+          "type": "large_string"
+        },
+        {
+          "name": "details_version",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "fetched_at",
+          "nullable": true,
+          "type": "timestamp[us]"
+        }
+      ],
+      "version_id": null
+    }
+  ]
+}

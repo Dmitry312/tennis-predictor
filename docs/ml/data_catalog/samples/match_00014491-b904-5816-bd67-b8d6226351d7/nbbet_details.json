@@ -1,0 +1,106 @@
+{
+  "coverage": "exact_manifest_only_not_all_history",
+  "match_id": "00014491-b904-5816-bd67-b8d6226351d7",
+  "silent_version_selection": false,
+  "source": "nbbet_details",
+  "versions": [
+    {
+      "content_sha256": "8d2c52e8ba0f4477c47c2c0eaf529e66febcd3196b2d3bc3538bef97f210e0d4",
+      "coverage": "selected_object_only",
+      "etag": "\"35e741a0314f351e43e660848f3f56c3\"",
+      "last_modified": "2026-10-07 03:16:39+00:00",
+      "matching_rows_observed": 1,
+      "object_key": "nbbet_details/gender=F/level=tour/year=2023/part-20261006T203817-00051.parquet",
+      "requested_version": {
+        "current": true,
+        "key": "nbbet_details/gender=F/level=tour/year=2023/part-20261006T203817-00051.parquet"
+      },
+      "rows": [
+        {
+          "canonical_match_id": "00014491-b904-5816-bd67-b8d6226351d7",
+          "details_version": 3,
+          "extra_json": null,
+          "fetched_at": "2026-10-07 03:16:37.797229",
+          "has_coverage": true,
+          "nbbet_match_id": 461686,
+          "p1_rank": 50,
+          "p1_rank_tour": "WTA",
+          "p2_rank": 68,
+          "p2_rank_tour": "WTA",
+          "players_json": "{\"p1\": {\"1\": \"Noskova L.\", \"2\": null, \"3\": false, \"4\": {\"1\": 50, \"2\": \"WTA\"}}, \"p2\": {\"1\": \"Ковинич Д.\", \"2\": \"https://nb-bet.com/Images/tennis/141/15743726130121.png\", \"3\": true, \"4\": {\"1\": 68, \"2\": \"WTA\"}}}",
+          "sets_json": "[{\"duration\": \"00:34\", \"score_team1\": 6, \"score_team2\": 3, \"tiebreak_score_team1\": null, \"tiebreak_score_team2\": null}, {\"duration\": \"00:21\", \"score_team1\": 2, \"score_team2\": 1, \"tiebreak_score_team1\": null, \"tiebreak_score_team2\": null}]",
+          "status": 9
+        }
+      ],
+      "rows_truncated": 0,
+      "schema": [
+        {
+          "name": "canonical_match_id",
+          "nullable": true,
+          "type": "large_string"
+        },
+        {
+          "name": "nbbet_match_id",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "status",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "has_coverage",
+          "nullable": true,
+          "type": "bool"
+        },
+        {
+          "name": "sets_json",
+          "nullable": true,
+          "type": "large_string"
+        },
+        {
+          "name": "extra_json",
+          "nullable": true,
+          "type": "null"
+        },
+        {
+          "name": "players_json",
+          "nullable": true,
+          "type": "large_string"
+        },
+        {
+          "name": "p1_rank",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "p2_rank",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "p1_rank_tour",
+          "nullable": true,
+          "type": "large_string"
+        },
+        {
+          "name": "p2_rank_tour",
+          "nullable": true,
+          "type": "large_string"
+        },
+        {
+          "name": "details_version",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "fetched_at",
+          "nullable": true,
+          "type": "timestamp[us]"
+        }
+      ],
+      "version_id": null
+    }
+  ]
+}
