@@ -53,7 +53,8 @@ removed on success/failure; the default path creates no persistent server review
 
 Observed existing successful runs: staging #45770870231 and publication #45773343170
 created PR #72 with two matches. Its head at inspection was
-950a5bf12fdc4cd7c888ef94d4ed6356ed83dc12; it was open/unmerged. The persisted plan is:
+950a5bf12fdc4cd7c888ef94d4ed6356ed83dc12. It was pending during Issue #73;
+by Issue #76 it is merged and its two examples are on ML. The persisted plan is:
 
     docs/ml/data_catalog/acquisition-plans/2c161258d768f17a129cb5643754f972524a2f2ea32f5104a23b23da8a44d34c.json
 
@@ -67,10 +68,10 @@ BEFORE SSH and blocks while #72 is pending. It does not silently pick another pl
 Closing the known baseline PR without incorporating its catalog also does not
 silently rediscover the first two samples.
 
-Minimal safe migration: the owner incorporates PR #72 through the normal merge
-process outside this Codex task, and merges this implementation when ready. The
-next dispatch then discovers the tracked plan automatically, verifies committed
-samples/checksums and resumes at offset 2. If other plans also exist, set the
+The baseline migration is already complete; do not merge or import PR #72 again.
+After the standard workflow version is incorporated normally, dispatch discovers
+the tracked plan, verifies committed samples/checksums and resumes at the current
+first missing position (2 when only the original two examples are present). If other plans also exist, set the
 optional selection_plan path above; it is a path selector, not a new approval.
 No offset, ID list, archive extraction or rights statement needs to be supplied.
 There is no unsafe override that publishes a conflicting index while #72 is pending.
