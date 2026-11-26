@@ -16,3 +16,30 @@ Identity/results audit -> canonical layer -> aggregates -> state/checkpoints -> 
 
 ## User-requested ML experiment agent
 Explicit project requirement: create a separate ML agent that accepts user hypotheses and wishes, runs reproducible experiments, compares results, maintains an experiment journal and reports findings. Remind the user when Feature Store, Dataset Builder and a reproducible baseline are ready; then design the agent with bounded compute, immutable experiment configurations, holdout protection and no autonomous production deployment. This is a roadmap item, not an active agent or scheduled reminder.
+
+
+## Routine operation convention — owner decision 2026-11-26, Issue #76
+
+Standard operations should run with one button and zero typed technical parameters.
+They must inspect current durable state, identify the next bounded step and continue
+idempotently. Version defaults and technical settings in workflow/project configuration,
+rather than ask the operator to reconstruct them for every run. Optional advanced
+overrides are for exceptional cases; they must not become prerequisites for normal use.
+
+Use the selected execution commit automatically and check it out explicitly for
+reproducibility. Equality between two variables derived from the same SHA proves
+consistency, not independent code review. Do not claim GitHub automatically selected
+a branch: selecting the required branch in its UI may still be necessary, and code
+must reject wrong-branch execution.
+
+One-click behavior never bypasses existing Environment approval, branch restrictions,
+manual merge or explicit authorization for risky operations such as production writes,
+schema changes or permission expansion. Existing standing permissions can be recorded
+in configuration for a specific bounded operation; they are not new privileges.
+Preserve load limits, read-only source access, secret checks, deterministic manifests,
+duplicate protection, safe diagnostics and failure-before-publication behavior.
+
+For the standard sample workflow, batch size 5, dispatch SHA and existing root runtime
+permission are versioned workflow settings. The persisted plan/catalog determine the
+next position. Source-history manifests and plan disambiguation remain optional
+advanced inputs. Separate legacy fallback workflows retain their own defaults.
