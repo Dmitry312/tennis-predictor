@@ -1,0 +1,226 @@
+{
+  "coverage": "exact_primary_key",
+  "match_id": "0031c832-dc69-5844-b109-80862d5e6699",
+  "rows": [
+    {
+      "championat_match_id": null,
+      "created_at": "2026-10-05T19:21:07.651092",
+      "details_attempted_at": null,
+      "details_attempts": 0,
+      "details_fetched_at": null,
+      "details_version": 1,
+      "duplicate_of": null,
+      "gender": "F",
+      "has_pbp": false,
+      "level": "tour",
+      "match_date": "2024-08-22",
+      "match_id": "0031c832-dc69-5844-b109-80862d5e6699",
+      "nbbet_match_id": 571806,
+      "nbbet_slug": "571806-erika-andreeva-maria-lourdes-carle-prognoz-na-match",
+      "odds_open_captured_at": null,
+      "odds_open_p1": null,
+      "odds_open_p2": null,
+      "odds_open_source": null,
+      "odds_open_status": null,
+      "pbp_completeness": null,
+      "pbp_s3_path": null,
+      "player1": "Andreeva E.",
+      "player2": "Carle M. L.",
+      "start_ts": "2024-08-22T16:00:00",
+      "status": 1,
+      "surface": "hard",
+      "tournament_name": "WTA. Монтеррей"
+    }
+  ],
+  "schema": [
+    {
+      "data_type": "uuid",
+      "name": "match_id",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "uuid"
+    },
+    {
+      "data_type": "character varying",
+      "name": "gender",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "varchar"
+    },
+    {
+      "data_type": "character varying",
+      "name": "level",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "varchar"
+    },
+    {
+      "data_type": "character varying",
+      "name": "tournament_name",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "varchar"
+    },
+    {
+      "data_type": "date",
+      "name": "match_date",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "date"
+    },
+    {
+      "data_type": "character varying",
+      "name": "player1",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "varchar"
+    },
+    {
+      "data_type": "character varying",
+      "name": "player2",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "varchar"
+    },
+    {
+      "data_type": "character varying",
+      "name": "surface",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "varchar"
+    },
+    {
+      "data_type": "integer",
+      "name": "nbbet_match_id",
+      "numeric_precision": 32,
+      "numeric_scale": 0,
+      "udt_name": "int4"
+    },
+    {
+      "data_type": "integer",
+      "name": "championat_match_id",
+      "numeric_precision": 32,
+      "numeric_scale": 0,
+      "udt_name": "int4"
+    },
+    {
+      "data_type": "boolean",
+      "name": "has_pbp",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "bool"
+    },
+    {
+      "data_type": "character varying",
+      "name": "pbp_s3_path",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "varchar"
+    },
+    {
+      "data_type": "timestamp without time zone",
+      "name": "created_at",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "timestamp"
+    },
+    {
+      "data_type": "double precision",
+      "name": "pbp_completeness",
+      "numeric_precision": 53,
+      "numeric_scale": null,
+      "udt_name": "float8"
+    },
+    {
+      "data_type": "smallint",
+      "name": "status",
+      "numeric_precision": 16,
+      "numeric_scale": 0,
+      "udt_name": "int2"
+    },
+    {
+      "data_type": "character varying",
+      "name": "nbbet_slug",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "varchar"
+    },
+    {
+      "data_type": "timestamp without time zone",
+      "name": "details_fetched_at",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "timestamp"
+    },
+    {
+      "data_type": "timestamp without time zone",
+      "name": "details_attempted_at",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "timestamp"
+    },
+    {
+      "data_type": "smallint",
+      "name": "details_attempts",
+      "numeric_precision": 16,
+      "numeric_scale": 0,
+      "udt_name": "int2"
+    },
+    {
+      "data_type": "timestamp without time zone",
+      "name": "start_ts",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "timestamp"
+    },
+    {
+      "data_type": "uuid",
+      "name": "duplicate_of",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "uuid"
+    },
+    {
+      "data_type": "smallint",
+      "name": "details_version",
+      "numeric_precision": 16,
+      "numeric_scale": 0,
+      "udt_name": "int2"
+    },
+    {
+      "data_type": "numeric",
+      "name": "odds_open_p1",
+      "numeric_precision": 7,
+      "numeric_scale": 3,
+      "udt_name": "numeric"
+    },
+    {
+      "data_type": "numeric",
+      "name": "odds_open_p2",
+      "numeric_precision": 7,
+      "numeric_scale": 3,
+      "udt_name": "numeric"
+    },
+    {
+      "data_type": "timestamp without time zone",
+      "name": "odds_open_captured_at",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "timestamp"
+    },
+    {
+      "data_type": "character varying",
+      "name": "odds_open_source",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "varchar"
+    },
+    {
+      "data_type": "smallint",
+      "name": "odds_open_status",
+      "numeric_precision": 16,
+      "numeric_scale": 0,
+      "udt_name": "int2"
+    }
+  ]
+}

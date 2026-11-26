@@ -1,0 +1,19 @@
+{
+  "coverage": "exact_manifest_only_not_all_history",
+  "match_id": "00034701-1b27-54b6-b96f-6d5a6718c9c9",
+  "silent_version_selection": false,
+  "source": "nbbet_stats",
+  "versions": [
+    {
+      "coverage": "object_missing",
+      "matching_rows_observed": 0,
+      "object_key": "nbbet_stats/gender=M/level=challenger/year=2019/part-20261007T173628-00151.parquet",
+      "requested_version": {
+        "current": true,
+        "key": "nbbet_stats/gender=M/level=challenger/year=2019/part-20261007T173628-00151.parquet"
+      },
+      "rows": [],
+      "rows_truncated": 0
+    }
+  ]
+}
