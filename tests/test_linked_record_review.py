@@ -252,10 +252,14 @@ def test_orchestrator_sanitizes_errors_and_does_not_print(monkeypatch,capsys):
     assert capsys.readouterr().out == "" and capsys.readouterr().err == ""
 
 
-def test_catalog_is_synthetic_and_bounded():
+def test_synthetic_catalog_examples_are_separate_and_bounded():
     catalog = ROOT/"docs/ml/data_catalog"
     index = json.loads((catalog/"index.json").read_text())
-    assert index["real_examples"] == []
+    assert any(entry.get("path")=="examples.synthetic.json" and entry.get("origin")=="synthetic"
+               for entry in index["entries"])
+    # The persistent catalog may now contain real batches; fiction stays a separate origin.
+    assert all(entry.get("path")!="examples.synthetic.json" and entry.get("origin")=="real_source_records"
+               for entry in index["real_examples"])
     sample = json.loads((catalog/"examples.synthetic.json").read_text())
     assert sample["origin"] == "synthetic_fabricated_not_production"
     for batch in sample["batches"]:
