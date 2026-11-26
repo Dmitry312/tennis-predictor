@@ -38,7 +38,7 @@ def main():
     snapshot = args.output / report["mode"] / "versions" / report["version"]
     print(f"{report['mode']}: {report['processed_matches']} matches ({counts})")
     print(
-        f"Match-local winners: {report['match_local_winners']}; gated targets: {report['confirmed_results']}"
+        f"Match-local winners: {report['match_local_winners']}; local labels: {report['confirmed_results']}; eligible targets: {report['eligible_targets']}"
     )
     print(
         f"Missing checks: {report['missing_checks']}; conflicting checks: {report['conflicting_checks']}"

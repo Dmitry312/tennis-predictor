@@ -1,6 +1,6 @@
 """Canonical Layer v1 physical contracts and temporal policy."""
 
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC
 
 import pyarrow as pa
 
@@ -104,6 +104,7 @@ FIELDS = {
         ("candidate_winner_side", I),
         ("winner_side", I),
         ("target_p1_win", I),
+        ("target_eligible", B),
         ("exclusion_reason", S),
         ("player_state_eligible", B),
     ],
@@ -230,14 +231,10 @@ def temporal_gate(kind, *, mode, cutoff, available_at=None, event_date=None, eff
         event_date is None or event_date >= cutoff.astimezone(UTC).date()
     ):
         return False, "event_order_unproven"
+    if available_at is not None and available_at < cutoff:
+        return True, "proven_available"
+    if mode == "historical_research_replay" and kind in ("result", "statistics", "pbp"):
+        return True, "assumed_after_match_date"
     if available_at is not None:
-        return (True, "proven_available") if available_at < cutoff else (False, "not_yet_available")
-    if (
-        mode == "historical_research_replay"
-        and kind in ("result", "statistics", "pbp")
-        and event_date
-    ):
-        embargo_end = datetime.combine(event_date + timedelta(days=2), time(), UTC)
-        if embargo_end < cutoff:
-            return True, "assumed_after_end_of_day_plus_24h"
+        return False, "not_yet_available"
     return False, "availability_unknown"

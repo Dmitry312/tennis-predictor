@@ -721,7 +721,8 @@ class MatchTransform:
                     source_candidate_winner_side=source_candidate,
                     candidate_winner_side=candidate,
                     winner_side=winner,
-                    target_p1_win=int(winner == 1) if exclusion is None else None,
+                    target_p1_win=int(winner == 1) if winner is not None else None,
+                    target_eligible=exclusion is None,
                     exclusion_reason=exclusion,
                     player_state_eligible=state_eligible,
                 )
@@ -734,6 +735,7 @@ class MatchTransform:
                 0,
                 status=self.meta.get("status"),
                 exclusion_reason="score_observation_missing",
+                target_eligible=False,
                 player_state_eligible=False,
             )
             for category in ("result", "player_state", "model_baseline_label"):
