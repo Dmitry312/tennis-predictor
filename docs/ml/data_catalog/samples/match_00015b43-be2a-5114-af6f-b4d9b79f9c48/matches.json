@@ -1,0 +1,226 @@
+{
+  "coverage": "exact_primary_key",
+  "match_id": "00015b43-be2a-5114-af6f-b4d9b79f9c48",
+  "rows": [
+    {
+      "championat_match_id": null,
+      "created_at": "2026-09-15T22:09:00.070833",
+      "details_attempted_at": null,
+      "details_attempts": 0,
+      "details_fetched_at": "2026-10-08T17:49:22.597057",
+      "details_version": 3,
+      "duplicate_of": null,
+      "gender": "M",
+      "has_pbp": true,
+      "level": "challenger",
+      "match_date": "2017-02-27",
+      "match_id": "00015b43-be2a-5114-af6f-b4d9b79f9c48",
+      "nbbet_match_id": 26041,
+      "nbbet_slug": "26041-zdenek-kolar-ilya-ivashka-prognoz-na-match",
+      "odds_open_captured_at": null,
+      "odds_open_p1": null,
+      "odds_open_p2": null,
+      "odds_open_source": null,
+      "odds_open_status": null,
+      "pbp_completeness": 1,
+      "pbp_s3_path": "pbp/gender=M/level=challenger/year=2017/part-0000.parquet",
+      "player1": "Колар З.",
+      "player2": "Ивашка И.",
+      "start_ts": "2017-02-27T15:10:00",
+      "status": 3,
+      "surface": "hard",
+      "tournament_name": "ATP Челленджер. Вроцлав"
+    }
+  ],
+  "schema": [
+    {
+      "data_type": "uuid",
+      "name": "match_id",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "uuid"
+    },
+    {
+      "data_type": "character varying",
+      "name": "gender",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "varchar"
+    },
+    {
+      "data_type": "character varying",
+      "name": "level",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "varchar"
+    },
+    {
+      "data_type": "character varying",
+      "name": "tournament_name",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "varchar"
+    },
+    {
+      "data_type": "date",
+      "name": "match_date",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "date"
+    },
+    {
+      "data_type": "character varying",
+      "name": "player1",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "varchar"
+    },
+    {
+      "data_type": "character varying",
+      "name": "player2",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "varchar"
+    },
+    {
+      "data_type": "character varying",
+      "name": "surface",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "varchar"
+    },
+    {
+      "data_type": "integer",
+      "name": "nbbet_match_id",
+      "numeric_precision": 32,
+      "numeric_scale": 0,
+      "udt_name": "int4"
+    },
+    {
+      "data_type": "integer",
+      "name": "championat_match_id",
+      "numeric_precision": 32,
+      "numeric_scale": 0,
+      "udt_name": "int4"
+    },
+    {
+      "data_type": "boolean",
+      "name": "has_pbp",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "bool"
+    },
+    {
+      "data_type": "character varying",
+      "name": "pbp_s3_path",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "varchar"
+    },
+    {
+      "data_type": "timestamp without time zone",
+      "name": "created_at",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "timestamp"
+    },
+    {
+      "data_type": "double precision",
+      "name": "pbp_completeness",
+      "numeric_precision": 53,
+      "numeric_scale": null,
+      "udt_name": "float8"
+    },
+    {
+      "data_type": "smallint",
+      "name": "status",
+      "numeric_precision": 16,
+      "numeric_scale": 0,
+      "udt_name": "int2"
+    },
+    {
+      "data_type": "character varying",
+      "name": "nbbet_slug",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "varchar"
+    },
+    {
+      "data_type": "timestamp without time zone",
+      "name": "details_fetched_at",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "timestamp"
+    },
+    {
+      "data_type": "timestamp without time zone",
+      "name": "details_attempted_at",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "timestamp"
+    },
+    {
+      "data_type": "smallint",
+      "name": "details_attempts",
+      "numeric_precision": 16,
+      "numeric_scale": 0,
+      "udt_name": "int2"
+    },
+    {
+      "data_type": "timestamp without time zone",
+      "name": "start_ts",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "timestamp"
+    },
+    {
+      "data_type": "uuid",
+      "name": "duplicate_of",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "uuid"
+    },
+    {
+      "data_type": "smallint",
+      "name": "details_version",
+      "numeric_precision": 16,
+      "numeric_scale": 0,
+      "udt_name": "int2"
+    },
+    {
+      "data_type": "numeric",
+      "name": "odds_open_p1",
+      "numeric_precision": 7,
+      "numeric_scale": 3,
+      "udt_name": "numeric"
+    },
+    {
+      "data_type": "numeric",
+      "name": "odds_open_p2",
+      "numeric_precision": 7,
+      "numeric_scale": 3,
+      "udt_name": "numeric"
+    },
+    {
+      "data_type": "timestamp without time zone",
+      "name": "odds_open_captured_at",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "timestamp"
+    },
+    {
+      "data_type": "character varying",
+      "name": "odds_open_source",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "udt_name": "varchar"
+    },
+    {
+      "data_type": "smallint",
+      "name": "odds_open_status",
+      "numeric_precision": 16,
+      "numeric_scale": 0,
+      "udt_name": "int2"
+    }
+  ]
+}

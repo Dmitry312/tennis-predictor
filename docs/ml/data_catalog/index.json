@@ -15,7 +15,17 @@
     "real_examples": "real-sports-original-v1",
     "synthetic": "linked-sanitized-v1"
   },
-  "publication_status": "owner_approved_real_sports_content_and_rights_review_required",
+  "publication_policy": {
+    "content_eligibility_responsibility": "project_owner",
+    "content_guard": "required_fail_closed",
+    "owner_decision_date": "2026-11-26",
+    "per_batch_manual_attestations": false,
+    "policy_id": "owner-public-sports-2026-11-26",
+    "retain_original_sports_values": true,
+    "scope": "ordinary_sports_records_in_public_tennis_predictor",
+    "third_party_redistribution_rights": "not_certified_by_repository_owner_permission"
+  },
+  "publication_status": "standing_owner_policy_automatic_validation",
   "real_examples": [
     {
       "manifest_sha256": "dd6252d435267260efe94353fc43e42169fa2aeb956a8d4ff2719f2596d2f047",
@@ -25,11 +35,46 @@
       "review_state": "content_and_rights_review_pending"
     },
     {
+      "manifest_sha256": "44f3cc76e31c2654edc2a87cffa79e994f17f80e9e23b6c10206bced88b9c63c",
+      "match_id": "00015aa9-3aec-5c74-a4cc-530822107e82",
+      "origin": "real_source_records",
+      "path": "samples/match_00015aa9-3aec-5c74-a4cc-530822107e82",
+      "review_state": "automated_content_validation_under_standing_owner_policy"
+    },
+    {
+      "manifest_sha256": "0faa0c71bb23445ae284f099df833724219608113570ca9abff2b9df224a15fe",
+      "match_id": "00015b43-be2a-5114-af6f-b4d9b79f9c48",
+      "origin": "real_source_records",
+      "path": "samples/match_00015b43-be2a-5114-af6f-b4d9b79f9c48",
+      "review_state": "automated_content_validation_under_standing_owner_policy"
+    },
+    {
+      "manifest_sha256": "2d3b487fa660cd3d373cd9079495b610652088c5579e292d2e37f3bdaecf3ff0",
+      "match_id": "00034701-1b27-54b6-b96f-6d5a6718c9c9",
+      "origin": "real_source_records",
+      "path": "samples/match_00034701-1b27-54b6-b96f-6d5a6718c9c9",
+      "review_state": "automated_content_validation_under_standing_owner_policy"
+    },
+    {
+      "manifest_sha256": "1858bad8af3b0a1239d87fe8288f993dd3ca65da329846d79f6001262c2150a5",
+      "match_id": "000df9af-8afc-5864-b76c-383f8fc27981",
+      "origin": "real_source_records",
+      "path": "samples/match_000df9af-8afc-5864-b76c-383f8fc27981",
+      "review_state": "automated_content_validation_under_standing_owner_policy"
+    },
+    {
       "manifest_sha256": "e86a0165c5ea5b70af44feee871e6bb2b8b66fa92423b0a31758e9a5b7260691",
       "match_id": "001ed393-59a1-56db-a9f4-bcf0f5d5fa73",
       "origin": "real_source_records",
       "path": "samples/match_001ed393-59a1-56db-a9f4-bcf0f5d5fa73",
       "review_state": "content_and_rights_review_pending"
+    },
+    {
+      "manifest_sha256": "cb416001cbfaf7283fb46a63d4d64fb0ddfed4d4e8709aab403c7c1e6670b167",
+      "match_id": "0031c832-dc69-5844-b109-80862d5e6699",
+      "origin": "real_source_records",
+      "path": "samples/match_0031c832-dc69-5844-b109-80862d5e6699",
+      "review_state": "automated_content_validation_under_standing_owner_policy"
     }
   ]
 }

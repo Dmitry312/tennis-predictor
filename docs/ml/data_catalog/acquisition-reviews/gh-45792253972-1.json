@@ -1,0 +1,626 @@
+{
+  "archive_sha256": "5c1158720ea741beb12b7ee72cd0d6e09910c1e77c9cf5fbe2a93fe01e6e60c0",
+  "automatic_validation": "integrity_and_secret_contact_checks_passed",
+  "publication_policy": {
+    "content_eligibility_responsibility": "project_owner",
+    "content_guard": "required_fail_closed",
+    "owner_decision_date": "2026-11-26",
+    "per_batch_manual_attestations": false,
+    "policy_id": "owner-public-sports-2026-11-26",
+    "retain_original_sports_values": true,
+    "scope": "ordinary_sports_records_in_public_tennis_predictor",
+    "third_party_redistribution_rights": "not_certified_by_repository_owner_permission"
+  },
+  "report": {
+    "batch_offset": 2,
+    "blockers": [
+      "unindexed_or_unknown_other_pg_links_not_exported",
+      "exact_sibling_candidates_do_not_discover_all_history"
+    ],
+    "current_pointer_unavailable_match_ids": [
+      "000df9af-8afc-5864-b76c-383f8fc27981",
+      "0031c832-dc69-5844-b109-80862d5e6699"
+    ],
+    "exported_count": 5,
+    "format": "first20-acquisition-report-v1",
+    "next_offset": 7,
+    "other_linked_pg_tables": {
+      "candidates": [],
+      "truncated": false
+    },
+    "plan_sha256": "2c161258d768f17a129cb5643754f972524a2f2ea32f5104a23b23da8a44d34c",
+    "publication_policy": {
+      "content_eligibility_responsibility": "project_owner",
+      "content_guard": "required_fail_closed",
+      "owner_decision_date": "2026-11-26",
+      "per_batch_manual_attestations": false,
+      "policy_id": "owner-public-sports-2026-11-26",
+      "retain_original_sports_values": true,
+      "scope": "ordinary_sports_records_in_public_tennis_predictor",
+      "third_party_redistribution_rights": "not_certified_by_repository_owner_permission"
+    },
+    "runtime": {
+      "packages": {
+        "boto3": "1.43.93",
+        "psycopg2-binary": "2.9.13",
+        "pyarrow": "25.0.1"
+      },
+      "postgres_major": 16,
+      "python": "3.12.14"
+    },
+    "score_formats": "unverified",
+    "selected_count": 20,
+    "selection_shortfall": 0,
+    "source_commit": "e2fa2f4a636db850d4c1de9fcd122b244b3d1ab3",
+    "source_eligibility": "not_certified_project_owner_responsibility",
+    "sources": {
+      "00015aa9-3aec-5c74-a4cc-530822107e82": {
+        "nbbet_details": {
+          "coverage": "exact_manifest_only_not_all_history",
+          "object_states": [
+            "object_missing"
+          ],
+          "objects": 1,
+          "rows": 0,
+          "schema_variants": [
+            []
+          ],
+          "truncated_rows": 0
+        },
+        "nbbet_raw": {
+          "coverage": "exact_manifest_only_not_all_history",
+          "object_states": [
+            "object_missing"
+          ],
+          "objects": 1,
+          "rows": 0,
+          "schema_variants": [
+            []
+          ],
+          "truncated_rows": 0
+        },
+        "nbbet_stats": {
+          "coverage": "exact_manifest_only_not_all_history",
+          "object_states": [
+            "object_missing"
+          ],
+          "objects": 1,
+          "rows": 0,
+          "schema_variants": [
+            []
+          ],
+          "truncated_rows": 0
+        },
+        "pbp": {
+          "coverage": "exact_manifest_only_not_all_history",
+          "object_states": [
+            "selected_object_only"
+          ],
+          "objects": 1,
+          "rows": 170,
+          "schema_variants": [
+            [
+              {
+                "name": "canonical_match_id",
+                "nullable": true,
+                "type": "large_string"
+              },
+              {
+                "name": "gender",
+                "nullable": true,
+                "type": "large_string"
+              },
+              {
+                "name": "level",
+                "nullable": true,
+                "type": "large_string"
+              },
+              {
+                "name": "surface",
+                "nullable": true,
+                "type": "null"
+              },
+              {
+                "name": "set_num",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "game_num",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "point_num",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "server",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "point_winner",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "server_won_point",
+                "nullable": true,
+                "type": "bool"
+              },
+              {
+                "name": "score_server",
+                "nullable": true,
+                "type": "large_string"
+              },
+              {
+                "name": "score_returner",
+                "nullable": true,
+                "type": "large_string"
+              },
+              {
+                "name": "is_break_point",
+                "nullable": true,
+                "type": "bool"
+              },
+              {
+                "name": "is_match_point",
+                "nullable": true,
+                "type": "bool"
+              },
+              {
+                "name": "is_tiebreak",
+                "nullable": true,
+                "type": "bool"
+              },
+              {
+                "name": "point_type",
+                "nullable": true,
+                "type": "large_string"
+              },
+              {
+                "name": "game_complete",
+                "nullable": true,
+                "type": "bool"
+              }
+            ]
+          ],
+          "truncated_rows": 0
+        }
+      },
+      "00015b43-be2a-5114-af6f-b4d9b79f9c48": {
+        "nbbet_details": {
+          "coverage": "exact_manifest_only_not_all_history",
+          "object_states": [
+            "object_missing"
+          ],
+          "objects": 1,
+          "rows": 0,
+          "schema_variants": [
+            []
+          ],
+          "truncated_rows": 0
+        },
+        "nbbet_raw": {
+          "coverage": "exact_manifest_only_not_all_history",
+          "object_states": [
+            "object_missing"
+          ],
+          "objects": 1,
+          "rows": 0,
+          "schema_variants": [
+            []
+          ],
+          "truncated_rows": 0
+        },
+        "nbbet_stats": {
+          "coverage": "exact_manifest_only_not_all_history",
+          "object_states": [
+            "object_missing"
+          ],
+          "objects": 1,
+          "rows": 0,
+          "schema_variants": [
+            []
+          ],
+          "truncated_rows": 0
+        },
+        "pbp": {
+          "coverage": "exact_manifest_only_not_all_history",
+          "object_states": [
+            "selected_object_only"
+          ],
+          "objects": 1,
+          "rows": 208,
+          "schema_variants": [
+            [
+              {
+                "name": "canonical_match_id",
+                "nullable": true,
+                "type": "large_string"
+              },
+              {
+                "name": "gender",
+                "nullable": true,
+                "type": "large_string"
+              },
+              {
+                "name": "level",
+                "nullable": true,
+                "type": "large_string"
+              },
+              {
+                "name": "surface",
+                "nullable": true,
+                "type": "null"
+              },
+              {
+                "name": "set_num",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "game_num",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "point_num",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "server",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "point_winner",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "server_won_point",
+                "nullable": true,
+                "type": "bool"
+              },
+              {
+                "name": "score_server",
+                "nullable": true,
+                "type": "large_string"
+              },
+              {
+                "name": "score_returner",
+                "nullable": true,
+                "type": "large_string"
+              },
+              {
+                "name": "is_break_point",
+                "nullable": true,
+                "type": "bool"
+              },
+              {
+                "name": "is_match_point",
+                "nullable": true,
+                "type": "bool"
+              },
+              {
+                "name": "is_tiebreak",
+                "nullable": true,
+                "type": "bool"
+              },
+              {
+                "name": "point_type",
+                "nullable": true,
+                "type": "large_string"
+              },
+              {
+                "name": "game_complete",
+                "nullable": true,
+                "type": "bool"
+              }
+            ]
+          ],
+          "truncated_rows": 0
+        }
+      },
+      "00034701-1b27-54b6-b96f-6d5a6718c9c9": {
+        "nbbet_details": {
+          "coverage": "exact_manifest_only_not_all_history",
+          "object_states": [
+            "selected_object_only"
+          ],
+          "objects": 1,
+          "rows": 1,
+          "schema_variants": [
+            [
+              {
+                "name": "canonical_match_id",
+                "nullable": true,
+                "type": "large_string"
+              },
+              {
+                "name": "nbbet_match_id",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "status",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "has_coverage",
+                "nullable": true,
+                "type": "bool"
+              },
+              {
+                "name": "sets_json",
+                "nullable": true,
+                "type": "large_string"
+              },
+              {
+                "name": "extra_json",
+                "nullable": true,
+                "type": "null"
+              },
+              {
+                "name": "players_json",
+                "nullable": true,
+                "type": "large_string"
+              },
+              {
+                "name": "p1_rank",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "p2_rank",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "p1_rank_tour",
+                "nullable": true,
+                "type": "large_string"
+              },
+              {
+                "name": "p2_rank_tour",
+                "nullable": true,
+                "type": "large_string"
+              },
+              {
+                "name": "details_version",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "fetched_at",
+                "nullable": true,
+                "type": "timestamp[us]"
+              }
+            ]
+          ],
+          "truncated_rows": 0
+        },
+        "nbbet_raw": {
+          "coverage": "exact_manifest_only_not_all_history",
+          "object_states": [
+            "selected_object_only"
+          ],
+          "objects": 1,
+          "rows": 1,
+          "schema_variants": [
+            [
+              {
+                "name": "canonical_match_id",
+                "nullable": true,
+                "type": "large_string"
+              },
+              {
+                "name": "nbbet_match_id",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "raw_json",
+                "nullable": true,
+                "type": "large_string"
+              },
+              {
+                "name": "fetched_at",
+                "nullable": true,
+                "type": "timestamp[us]"
+              }
+            ]
+          ],
+          "truncated_rows": 0
+        },
+        "nbbet_stats": {
+          "coverage": "exact_manifest_only_not_all_history",
+          "object_states": [
+            "object_missing"
+          ],
+          "objects": 1,
+          "rows": 0,
+          "schema_variants": [
+            []
+          ],
+          "truncated_rows": 0
+        },
+        "pbp": {
+          "coverage": "exact_manifest_only_not_all_history",
+          "object_states": [
+            "selected_object_only"
+          ],
+          "objects": 1,
+          "rows": 65,
+          "schema_variants": [
+            [
+              {
+                "name": "canonical_match_id",
+                "nullable": true,
+                "type": "large_string"
+              },
+              {
+                "name": "gender",
+                "nullable": true,
+                "type": "large_string"
+              },
+              {
+                "name": "level",
+                "nullable": true,
+                "type": "large_string"
+              },
+              {
+                "name": "surface",
+                "nullable": true,
+                "type": "null"
+              },
+              {
+                "name": "set_num",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "game_num",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "point_num",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "server",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "point_winner",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "server_won_point",
+                "nullable": true,
+                "type": "bool"
+              },
+              {
+                "name": "score_server",
+                "nullable": true,
+                "type": "large_string"
+              },
+              {
+                "name": "score_returner",
+                "nullable": true,
+                "type": "large_string"
+              },
+              {
+                "name": "is_break_point",
+                "nullable": true,
+                "type": "bool"
+              },
+              {
+                "name": "is_match_point",
+                "nullable": true,
+                "type": "bool"
+              },
+              {
+                "name": "is_tiebreak",
+                "nullable": true,
+                "type": "bool"
+              },
+              {
+                "name": "point_type",
+                "nullable": true,
+                "type": "large_string"
+              },
+              {
+                "name": "game_complete",
+                "nullable": true,
+                "type": "bool"
+              }
+            ]
+          ],
+          "truncated_rows": 0
+        }
+      },
+      "000df9af-8afc-5864-b76c-383f8fc27981": {
+        "nbbet_details": {
+          "coverage": "unplanned_or_unavailable",
+          "object_states": [],
+          "objects": 0,
+          "rows": 0,
+          "schema_variants": [],
+          "truncated_rows": 0
+        },
+        "nbbet_raw": {
+          "coverage": "unplanned_or_unavailable",
+          "object_states": [],
+          "objects": 0,
+          "rows": 0,
+          "schema_variants": [],
+          "truncated_rows": 0
+        },
+        "nbbet_stats": {
+          "coverage": "unplanned_or_unavailable",
+          "object_states": [],
+          "objects": 0,
+          "rows": 0,
+          "schema_variants": [],
+          "truncated_rows": 0
+        },
+        "pbp": {
+          "coverage": "unplanned_or_unavailable",
+          "object_states": [],
+          "objects": 0,
+          "rows": 0,
+          "schema_variants": [],
+          "truncated_rows": 0
+        }
+      },
+      "0031c832-dc69-5844-b109-80862d5e6699": {
+        "nbbet_details": {
+          "coverage": "unplanned_or_unavailable",
+          "object_states": [],
+          "objects": 0,
+          "rows": 0,
+          "schema_variants": [],
+          "truncated_rows": 0
+        },
+        "nbbet_raw": {
+          "coverage": "unplanned_or_unavailable",
+          "object_states": [],
+          "objects": 0,
+          "rows": 0,
+          "schema_variants": [],
+          "truncated_rows": 0
+        },
+        "nbbet_stats": {
+          "coverage": "unplanned_or_unavailable",
+          "object_states": [],
+          "objects": 0,
+          "rows": 0,
+          "schema_variants": [],
+          "truncated_rows": 0
+        },
+        "pbp": {
+          "coverage": "unplanned_or_unavailable",
+          "object_states": [],
+          "objects": 0,
+          "rows": 0,
+          "schema_variants": [],
+          "truncated_rows": 0
+        }
+      }
+    },
+    "target": 20
+  },
+  "source_commit": "e2fa2f4a636db850d4c1de9fcd122b244b3d1ab3",
+  "stage_ticket": "gh-45792253972-1",
+  "third_party_rights": "not_certified_owner_responsibility"
+}
