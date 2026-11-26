@@ -26,8 +26,8 @@ Seq Scan permission or broader search was added.
 
 This reproducible defect is a real failure path, not proof of the historical run's
 exact cause. Because the old run suppressed all relevant stderr, its authentication,
-runtime, config, database plan and source availability remain unproven. No production
-connection or rerun was made to fill those gaps.
+runtime, config, database plan and source availability remain unproven. The PostgreSQL 16 reproduction and both current/historical clean-runner checks
+passed in PR CI. No production connection or rerun was made to fill those gaps.
 
 ## Fixed diagnostic protocol
 

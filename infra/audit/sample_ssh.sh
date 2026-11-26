@@ -23,7 +23,7 @@ python -I -S -c 'import sys; sys.exit(sys.version_info < (3,11))' >/dev/null 2>&
 [[ -n "${RUNNER_TEMP:-}" ]] || fail runner_preflight invalid_input
 work=$(mktemp -d "$RUNNER_TEMP/sample-ssh.XXXXXX" 2>/dev/null) || fail runner_preflight project_unavailable
 relay_pid=""
-trap 'if [[ -n "$relay_pid" ]]; then kill "$relay_pid" 2>/dev/null || true; wait "$relay_pid" 2>/dev/null || true; fi; rm -rf -- "$work"' EXIT
+trap 'if [[ -n "$relay_pid" ]]; then kill "$relay_pid" 2>/dev/null || true; wait "$relay_pid" 2>/dev/null || true; fi; rm -rf -- "$work" 2>/dev/null || true' EXIT
 diag runner_preflight ok
 if ! python -I -S scripts/sample_workflow_request.py > "$work/request.py" 2> "$work/request.err"; then
   python -I -S infra/audit/sample_diagnostics.py < "$work/request.err"
@@ -45,7 +45,7 @@ awk 'NF == 3 && $2 == "ssh-ed25519" { print; count++ }
 actual=$(ssh-keygen -lf "$work/known_hosts" -E sha256 2>/dev/null | awk '{print $2}') \
   || fail host_verify key_format
 [[ "$actual" == "$SSH_FINGERPRINT" ]] || fail host_verify fingerprint_mismatch
-printf '%s\n' "$SSH_KEY" > "$work/key"
+{ printf '%s\n' "$SSH_KEY" > "$work/key"; } 2>/dev/null || fail host_verify unexpected
 diag host_verify ok
 remote="printf 'sample_diag:remote_entry:ok:none\n' >&2; \
 if ! cd '$PROJECT_PATH' 2>/dev/null; then printf 'sample_diag:remote_runtime:error:project_unavailable\n' >&2; exit 1; fi; \
@@ -85,4 +85,6 @@ diag ssh_transport ok
 python -I -S infra/audit/sample_diagnostics.py < "$work/capture.err"
 [[ "$relay_rc" == 0 ]] || fail diagnostic_channel unexpected
 [[ "${codes[1]}" == 0 ]] || fail runner_capture capture_failed
-if [[ -f "$work/summary" && -n "$summary" ]]; then cat "$work/summary" >> "$summary"; fi
+if [[ -f "$work/summary" && -n "$summary" ]]; then
+  { cat "$work/summary" >> "$summary"; } 2>/dev/null || fail runner_capture unexpected
+fi

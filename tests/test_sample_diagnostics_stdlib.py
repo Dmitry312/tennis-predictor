@@ -163,4 +163,23 @@ else:
         self.assertEqual(d.reason("remote_dependencies",ImportError("PRIVATE_PATH")),"imports_failed")
 
 
+    def test_oversized_single_line_at_eof_reports_bound(self):
+        output=io.StringIO()
+        d.relay(io.BytesIO(b"x"*1000),output,limit=700)
+        self.assertEqual(output.getvalue(),"sample_diag:diagnostic_channel:error:output_limit\n")
+
+    def test_bootstrap_validation_never_reflects_payload(self):
+        with tempfile.TemporaryDirectory(dir=self.base) as tmp:
+            env=self.environment(Path(tmp))
+            payload=base64.b64encode(json.dumps({"request":{"allow_existing_root":True},
+                "files":{"PRIVATE_PATH":"PRIVATE_ROW"},"sha":SHA,"project":env["PROJECT_PATH"]}).encode()).decode()
+            code="import sys;sys.path.insert(0,"+repr(str(ROOT))+");from infra.audit.sample_acquisition_bootstrap import main;sys.exit(main("+repr(payload)+"))"
+            result=subprocess.run([str(self.python),"-I","-S","-c",code],
+                capture_output=True,text=True,env=env)
+            self.assertEqual(result.returncode,1)
+            self.assertIn("sample_diag:remote_bootstrap:error:payload_invalid",result.stderr)
+            self.assertNotIn("PRIVATE",result.stderr)
+            self.assertNotIn("Traceback",result.stderr)
+
+
 if __name__=="__main__": unittest.main()

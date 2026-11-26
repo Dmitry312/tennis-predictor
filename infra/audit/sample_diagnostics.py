@@ -45,6 +45,8 @@ def reason(stage, exc):
             "candidate_plan_invalid":"selection_plan","candidate_plan_expensive":"selection_plan",
             "candidate_plan_unbounded":"selection_plan","candidate_index_required":"selection_plan",
             "no_eligible_matches_in_bounded_pool":"selection_empty",
+            "candidate_schema":"selection_invalid","candidate_order":"selection_invalid",
+            "candidate_page_limit":"selection_invalid","existing_root_review_required":"root_policy",
             "selected_scope_changed":"scope_changed","sql_row_limit":"row_limit",
             "sql_byte_limit":"byte_limit","candidate_row_limit":"row_limit",
             "manifest_invalid":"manifest_invalid","manifest_selection_mismatch":"manifest_invalid",
@@ -86,6 +88,7 @@ def reason(stage, exc):
         if stage=="postgres_connect": return "connection_failed"
         if stage=="runner_request": return "invalid_input"
         if stage=="runner_capture": return "malformed_output"
+        if stage=="postgres_selection": return "selection_invalid"
         if stage=="source_manifest": return "manifest_invalid"
         if stage=="parquet_decode": return "decode_failed"
         if stage=="remote_config": return "config_invalid"
@@ -124,6 +127,9 @@ def relay(source, output, limit=65536):
         if not raw.endswith(b"\n"):
             while raw and not raw.endswith(b"\n") and total<=limit:
                 raw=source.readline(513); total+=len(raw)
+            if total>limit:
+                emit("diagnostic_channel","error","output_limit",output)
+                break
             continue
         try: line=raw.decode("ascii").rstrip("\n")
         except UnicodeError: continue
