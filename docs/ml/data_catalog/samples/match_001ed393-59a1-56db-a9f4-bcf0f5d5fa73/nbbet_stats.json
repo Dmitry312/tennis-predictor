@@ -1,0 +1,280 @@
+{
+  "coverage": "exact_manifest_only_not_all_history",
+  "match_id": "001ed393-59a1-56db-a9f4-bcf0f5d5fa73",
+  "silent_version_selection": false,
+  "source": "nbbet_stats",
+  "versions": [
+    {
+      "content_sha256": "33f37ef778e018a38d4a320da4ff9b4c93660ba884778b0dd87180a672048d0e",
+      "coverage": "selected_object_only",
+      "etag": "\"57e19839d4612406df522a19ccea816c\"",
+      "last_modified": "2026-10-06 00:39:08+00:00",
+      "matching_rows_observed": 3,
+      "object_key": "nbbet_stats/gender=F/level=challenger/year=2026/part-20261005T211001-00042.parquet",
+      "requested_version": {
+        "current": true,
+        "key": "nbbet_stats/gender=F/level=challenger/year=2026/part-20261005T211001-00042.parquet"
+      },
+      "rows": [
+        {
+          "aces_p1": 1,
+          "aces_p2": 1,
+          "break_points_all_p1": null,
+          "break_points_all_p2": null,
+          "break_points_won_p1": null,
+          "break_points_won_p2": null,
+          "canonical_match_id": "001ed393-59a1-56db-a9f4-bcf0f5d5fa73",
+          "double_faults_p1": 3,
+          "double_faults_p2": 4,
+          "fetched_at": "2026-10-06 00:39:05.961809",
+          "first_serve_points_all_p1": 41,
+          "first_serve_points_all_p2": 41,
+          "first_serve_points_won_p1": 32,
+          "first_serve_points_won_p2": 26,
+          "max_games_in_row_p1": null,
+          "max_games_in_row_p2": null,
+          "max_points_in_row_p1": null,
+          "max_points_in_row_p2": null,
+          "scope": 0,
+          "second_serve_points_all_p1": 20,
+          "second_serve_points_all_p2": 30,
+          "second_serve_points_won_p1": 10,
+          "second_serve_points_won_p2": 12,
+          "service_games_all_p1": 8,
+          "service_games_all_p2": 8,
+          "service_games_won_p1": 6,
+          "service_games_won_p2": 4,
+          "unforced_errors_p1": null,
+          "unforced_errors_p2": null,
+          "winners_p1": null,
+          "winners_p2": null
+        },
+        {
+          "aces_p1": 1,
+          "aces_p2": 1,
+          "break_points_all_p1": null,
+          "break_points_all_p2": null,
+          "break_points_won_p1": null,
+          "break_points_won_p2": null,
+          "canonical_match_id": "001ed393-59a1-56db-a9f4-bcf0f5d5fa73",
+          "double_faults_p1": 1,
+          "double_faults_p2": 2,
+          "fetched_at": "2026-10-06 00:39:05.961809",
+          "first_serve_points_all_p1": 27,
+          "first_serve_points_all_p2": 22,
+          "first_serve_points_won_p1": 22,
+          "first_serve_points_won_p2": 17,
+          "max_games_in_row_p1": null,
+          "max_games_in_row_p2": null,
+          "max_points_in_row_p1": null,
+          "max_points_in_row_p2": null,
+          "scope": 1,
+          "second_serve_points_all_p1": 10,
+          "second_serve_points_all_p2": 14,
+          "second_serve_points_won_p1": 5,
+          "second_serve_points_won_p2": 6,
+          "service_games_all_p1": 4,
+          "service_games_all_p2": 4,
+          "service_games_won_p1": 3,
+          "service_games_won_p2": 3,
+          "unforced_errors_p1": null,
+          "unforced_errors_p2": null,
+          "winners_p1": null,
+          "winners_p2": null
+        },
+        {
+          "aces_p1": 0,
+          "aces_p2": 0,
+          "break_points_all_p1": null,
+          "break_points_all_p2": null,
+          "break_points_won_p1": null,
+          "break_points_won_p2": null,
+          "canonical_match_id": "001ed393-59a1-56db-a9f4-bcf0f5d5fa73",
+          "double_faults_p1": 2,
+          "double_faults_p2": 2,
+          "fetched_at": "2026-10-06 00:39:05.961809",
+          "first_serve_points_all_p1": 14,
+          "first_serve_points_all_p2": 19,
+          "first_serve_points_won_p1": 10,
+          "first_serve_points_won_p2": 9,
+          "max_games_in_row_p1": null,
+          "max_games_in_row_p2": null,
+          "max_points_in_row_p1": null,
+          "max_points_in_row_p2": null,
+          "scope": 2,
+          "second_serve_points_all_p1": 10,
+          "second_serve_points_all_p2": 16,
+          "second_serve_points_won_p1": 5,
+          "second_serve_points_won_p2": 6,
+          "service_games_all_p1": 4,
+          "service_games_all_p2": 4,
+          "service_games_won_p1": 3,
+          "service_games_won_p2": 1,
+          "unforced_errors_p1": null,
+          "unforced_errors_p2": null,
+          "winners_p1": null,
+          "winners_p2": null
+        }
+      ],
+      "rows_truncated": 0,
+      "schema": [
+        {
+          "name": "canonical_match_id",
+          "nullable": true,
+          "type": "large_string"
+        },
+        {
+          "name": "scope",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "aces_p1",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "aces_p2",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "double_faults_p1",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "double_faults_p2",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "first_serve_points_all_p1",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "first_serve_points_all_p2",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "first_serve_points_won_p1",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "first_serve_points_won_p2",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "second_serve_points_all_p1",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "second_serve_points_all_p2",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "second_serve_points_won_p1",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "second_serve_points_won_p2",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "break_points_won_p1",
+          "nullable": true,
+          "type": "null"
+        },
+        {
+          "name": "break_points_won_p2",
+          "nullable": true,
+          "type": "null"
+        },
+        {
+          "name": "break_points_all_p1",
+          "nullable": true,
+          "type": "null"
+        },
+        {
+          "name": "break_points_all_p2",
+          "nullable": true,
+          "type": "null"
+        },
+        {
+          "name": "winners_p1",
+          "nullable": true,
+          "type": "null"
+        },
+        {
+          "name": "winners_p2",
+          "nullable": true,
+          "type": "null"
+        },
+        {
+          "name": "unforced_errors_p1",
+          "nullable": true,
+          "type": "null"
+        },
+        {
+          "name": "unforced_errors_p2",
+          "nullable": true,
+          "type": "null"
+        },
+        {
+          "name": "max_points_in_row_p1",
+          "nullable": true,
+          "type": "null"
+        },
+        {
+          "name": "max_points_in_row_p2",
+          "nullable": true,
+          "type": "null"
+        },
+        {
+          "name": "max_games_in_row_p1",
+          "nullable": true,
+          "type": "null"
+        },
+        {
+          "name": "max_games_in_row_p2",
+          "nullable": true,
+          "type": "null"
+        },
+        {
+          "name": "service_games_won_p1",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "service_games_won_p2",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "service_games_all_p1",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "service_games_all_p2",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "fetched_at",
+          "nullable": true,
+          "type": "timestamp[us]"
+        }
+      ],
+      "version_id": null
+    }
+  ]
+}

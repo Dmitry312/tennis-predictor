@@ -1,0 +1,19 @@
+{
+  "coverage": "exact_manifest_only_not_all_history",
+  "match_id": "001ed393-59a1-56db-a9f4-bcf0f5d5fa73",
+  "silent_version_selection": false,
+  "source": "nbbet_raw",
+  "versions": [
+    {
+      "coverage": "object_missing",
+      "matching_rows_observed": 0,
+      "object_key": "nbbet_raw/gender=F/level=challenger/year=2026/part-20261005T211001-00042.parquet",
+      "requested_version": {
+        "current": true,
+        "key": "nbbet_raw/gender=F/level=challenger/year=2026/part-20261005T211001-00042.parquet"
+      },
+      "rows": [],
+      "rows_truncated": 0
+    }
+  ]
+}

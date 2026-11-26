@@ -1,0 +1,409 @@
+{
+  "publication_scope": "ordinary_sports_data_owner_approved_2026-11-25",
+  "report": {
+    "batch_offset": 0,
+    "blockers": [
+      "unindexed_or_unknown_other_pg_links_not_exported",
+      "exact_sibling_candidates_do_not_discover_all_history",
+      "content_and_source_redistribution_rights_review_required"
+    ],
+    "current_pointer_unavailable_match_ids": [
+      "00013f6a-76a9-58a3-b61a-b62a1e4af1aa"
+    ],
+    "exported_count": 2,
+    "format": "first20-acquisition-report-v1",
+    "next_offset": 2,
+    "other_linked_pg_tables": {
+      "candidates": [],
+      "truncated": false
+    },
+    "plan_sha256": "2c161258d768f17a129cb5643754f972524a2f2ea32f5104a23b23da8a44d34c",
+    "runtime": {
+      "packages": {
+        "boto3": "1.43.93",
+        "psycopg2-binary": "2.9.13",
+        "pyarrow": "25.0.1"
+      },
+      "postgres_major": 16,
+      "python": "3.12.14"
+    },
+    "score_formats": "unverified",
+    "selected_count": 20,
+    "selection_shortfall": 0,
+    "source_commit": "e20c6f02d96d34ec0b30fe85c84e45c2efe0bf8b",
+    "sources": {
+      "00013f6a-76a9-58a3-b61a-b62a1e4af1aa": {
+        "nbbet_details": {
+          "coverage": "unplanned_or_unavailable",
+          "object_states": [],
+          "objects": 0,
+          "rows": 0,
+          "schema_variants": [],
+          "truncated_rows": 0
+        },
+        "nbbet_raw": {
+          "coverage": "unplanned_or_unavailable",
+          "object_states": [],
+          "objects": 0,
+          "rows": 0,
+          "schema_variants": [],
+          "truncated_rows": 0
+        },
+        "nbbet_stats": {
+          "coverage": "unplanned_or_unavailable",
+          "object_states": [],
+          "objects": 0,
+          "rows": 0,
+          "schema_variants": [],
+          "truncated_rows": 0
+        },
+        "pbp": {
+          "coverage": "unplanned_or_unavailable",
+          "object_states": [],
+          "objects": 0,
+          "rows": 0,
+          "schema_variants": [],
+          "truncated_rows": 0
+        }
+      },
+      "001ed393-59a1-56db-a9f4-bcf0f5d5fa73": {
+        "nbbet_details": {
+          "coverage": "exact_manifest_only_not_all_history",
+          "object_states": [
+            "selected_object_only"
+          ],
+          "objects": 1,
+          "rows": 1,
+          "schema_variants": [
+            [
+              {
+                "name": "canonical_match_id",
+                "nullable": true,
+                "type": "large_string"
+              },
+              {
+                "name": "nbbet_match_id",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "status",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "has_coverage",
+                "nullable": true,
+                "type": "bool"
+              },
+              {
+                "name": "sets_json",
+                "nullable": true,
+                "type": "large_string"
+              },
+              {
+                "name": "extra_json",
+                "nullable": true,
+                "type": "large_string"
+              },
+              {
+                "name": "fetched_at",
+                "nullable": true,
+                "type": "timestamp[us]"
+              }
+            ]
+          ],
+          "truncated_rows": 0
+        },
+        "nbbet_raw": {
+          "coverage": "exact_manifest_only_not_all_history",
+          "object_states": [
+            "object_missing"
+          ],
+          "objects": 1,
+          "rows": 0,
+          "schema_variants": [
+            []
+          ],
+          "truncated_rows": 0
+        },
+        "nbbet_stats": {
+          "coverage": "exact_manifest_only_not_all_history",
+          "object_states": [
+            "selected_object_only"
+          ],
+          "objects": 1,
+          "rows": 3,
+          "schema_variants": [
+            [
+              {
+                "name": "canonical_match_id",
+                "nullable": true,
+                "type": "large_string"
+              },
+              {
+                "name": "scope",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "aces_p1",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "aces_p2",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "double_faults_p1",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "double_faults_p2",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "first_serve_points_all_p1",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "first_serve_points_all_p2",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "first_serve_points_won_p1",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "first_serve_points_won_p2",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "second_serve_points_all_p1",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "second_serve_points_all_p2",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "second_serve_points_won_p1",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "second_serve_points_won_p2",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "break_points_won_p1",
+                "nullable": true,
+                "type": "null"
+              },
+              {
+                "name": "break_points_won_p2",
+                "nullable": true,
+                "type": "null"
+              },
+              {
+                "name": "break_points_all_p1",
+                "nullable": true,
+                "type": "null"
+              },
+              {
+                "name": "break_points_all_p2",
+                "nullable": true,
+                "type": "null"
+              },
+              {
+                "name": "winners_p1",
+                "nullable": true,
+                "type": "null"
+              },
+              {
+                "name": "winners_p2",
+                "nullable": true,
+                "type": "null"
+              },
+              {
+                "name": "unforced_errors_p1",
+                "nullable": true,
+                "type": "null"
+              },
+              {
+                "name": "unforced_errors_p2",
+                "nullable": true,
+                "type": "null"
+              },
+              {
+                "name": "max_points_in_row_p1",
+                "nullable": true,
+                "type": "null"
+              },
+              {
+                "name": "max_points_in_row_p2",
+                "nullable": true,
+                "type": "null"
+              },
+              {
+                "name": "max_games_in_row_p1",
+                "nullable": true,
+                "type": "null"
+              },
+              {
+                "name": "max_games_in_row_p2",
+                "nullable": true,
+                "type": "null"
+              },
+              {
+                "name": "service_games_won_p1",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "service_games_won_p2",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "service_games_all_p1",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "service_games_all_p2",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "fetched_at",
+                "nullable": true,
+                "type": "timestamp[us]"
+              }
+            ]
+          ],
+          "truncated_rows": 0
+        },
+        "pbp": {
+          "coverage": "exact_manifest_only_not_all_history",
+          "object_states": [
+            "selected_object_only"
+          ],
+          "objects": 1,
+          "rows": 111,
+          "schema_variants": [
+            [
+              {
+                "name": "canonical_match_id",
+                "nullable": true,
+                "type": "large_string"
+              },
+              {
+                "name": "gender",
+                "nullable": true,
+                "type": "large_string"
+              },
+              {
+                "name": "level",
+                "nullable": true,
+                "type": "large_string"
+              },
+              {
+                "name": "surface",
+                "nullable": true,
+                "type": "null"
+              },
+              {
+                "name": "set_num",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "game_num",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "point_num",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "server",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "point_winner",
+                "nullable": true,
+                "type": "int64"
+              },
+              {
+                "name": "server_won_point",
+                "nullable": true,
+                "type": "bool"
+              },
+              {
+                "name": "score_server",
+                "nullable": true,
+                "type": "large_string"
+              },
+              {
+                "name": "score_returner",
+                "nullable": true,
+                "type": "large_string"
+              },
+              {
+                "name": "is_break_point",
+                "nullable": true,
+                "type": "bool"
+              },
+              {
+                "name": "is_match_point",
+                "nullable": true,
+                "type": "bool"
+              },
+              {
+                "name": "is_tiebreak",
+                "nullable": true,
+                "type": "bool"
+              },
+              {
+                "name": "point_type",
+                "nullable": true,
+                "type": "large_string"
+              },
+              {
+                "name": "game_complete",
+                "nullable": true,
+                "type": "bool"
+              }
+            ]
+          ],
+          "truncated_rows": 0
+        }
+      }
+    },
+    "target": 20
+  },
+  "review": {
+    "archive_sha256": "60dd6a1520a86d6425405331661418df16d302b9e548285646c94989ac62bff7",
+    "content_evidence": "Owner manual SSH review, gh-45770870231-1, 2026-11-26",
+    "content_reviewed": true,
+    "rights_evidence": "Можно",
+    "rights_reviewed": true
+  },
+  "source_commit": "e20c6f02d96d34ec0b30fe85c84e45c2efe0bf8b",
+  "stage_ticket": "gh-45770870231-1"
+}

@@ -1,20 +1,35 @@
 {
   "catalog_version": 2,
-  "publication_status": "owner_approved_real_sports_content_and_rights_review_required",
   "entries": [
     {
-      "path": "examples.synthetic.json",
-      "origin": "synthetic",
-      "review_state": "illustrative_not_production_evidence",
-      "dictionary": "dictionary.md",
       "allowlist": "allowlist.md",
-      "production_source": null
+      "dictionary": "dictionary.md",
+      "origin": "synthetic",
+      "path": "examples.synthetic.json",
+      "production_source": null,
+      "review_state": "illustrative_not_production_evidence"
     }
   ],
-  "real_examples": [],
   "owner_public_sports_approval": "2026-11-25",
   "projection_policies": {
-    "synthetic": "linked-sanitized-v1",
-    "real_examples": "real-sports-original-v1"
-  }
+    "real_examples": "real-sports-original-v1",
+    "synthetic": "linked-sanitized-v1"
+  },
+  "publication_status": "owner_approved_real_sports_content_and_rights_review_required",
+  "real_examples": [
+    {
+      "manifest_sha256": "dd6252d435267260efe94353fc43e42169fa2aeb956a8d4ff2719f2596d2f047",
+      "match_id": "00013f6a-76a9-58a3-b61a-b62a1e4af1aa",
+      "origin": "real_source_records",
+      "path": "samples/match_00013f6a-76a9-58a3-b61a-b62a1e4af1aa",
+      "review_state": "content_and_rights_review_pending"
+    },
+    {
+      "manifest_sha256": "e86a0165c5ea5b70af44feee871e6bb2b8b66fa92423b0a31758e9a5b7260691",
+      "match_id": "001ed393-59a1-56db-a9f4-bcf0f5d5fa73",
+      "origin": "real_source_records",
+      "path": "samples/match_001ed393-59a1-56db-a9f4-bcf0f5d5fa73",
+      "review_state": "content_and_rights_review_pending"
+    }
+  ]
 }
