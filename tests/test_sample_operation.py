@@ -186,3 +186,67 @@ def test_workflow_keeps_one_write_step_and_noop_cleanup_guards():
     cleanup=job["steps"][-1]
     assert "always()" in cleanup["if"] and "$OPERATION_DIR" in cleanup["run"]
     assert len(wf["on"]["workflow_dispatch"]["inputs"])==2
+
+
+def test_publisher_operation_cli_needs_no_single_archive_env(tmp_path,monkeypatch,capsys):
+    from contextlib import nullcontext
+    from scripts import publish_match_samples as publisher
+    target,_,path=seeded(tmp_path,12)
+    work=tmp_path/"operation"
+    op.collect(target,work,SHA,TICKET,offset=12,plan_path=path,fetch=Fetch(tmp_path))
+    api=AutoAPI()
+    monkeypatch.setattr(publisher,"ROOT",target)
+    monkeypatch.setattr(publisher,"GitHub",lambda *args:api)
+    monkeypatch.setattr(op,"bounded_runner",lambda *_:nullcontext())
+    monkeypatch.setattr(sys,"argv",["publish_match_samples.py","--operation"])
+    monkeypatch.delenv("SAMPLE_ARCHIVE",raising=False)
+    for key,value in {"OPERATION_DIR":str(work),"REVIEWED_SHA":SHA,"STAGE_TICKET":TICKET,
+                      "GITHUB_REPOSITORY":"fixture/repository","GH_TOKEN":"fixture-token"}.items():
+        monkeypatch.setenv(key,value)
+    assert publisher.main()==0
+    assert "sample_pr_created:999" in capsys.readouterr().out
+    assert sum(path=="pulls" for _,path,_ in api.calls)==1
+
+
+def test_internal_frozen_plan_request_is_validated_without_new_user_input(tmp_path,monkeypatch,capsys):
+    import ast,base64
+    from scripts import sample_workflow_request as request
+    _,plan,_=seeded(tmp_path,0)
+    path=tmp_path/"private-plan.json"; op.write_private(path,e.dumps(plan))
+    env={"OPERATION":"automatic","REVIEWED_SHA":SHA,"SELECTED_SHA":SHA,"STAGE_TICKET":TICKET,
+         "PROJECT_PATH":"/srv/existing","ALLOW_EXISTING_ROOT":"false","BATCH_OFFSET":"12","BATCH_SIZE":"5",
+         "OPERATION_PLAN_FILE":str(path),"PLAN_PATH":""}
+    for key,value in env.items(): monkeypatch.setenv(key,value)
+    assert request.main()==0
+    code=capsys.readouterr().out
+    tree=ast.parse(code)
+    encoded=tree.body[-1].exc.args[0].args[0].value
+    package=json.loads(base64.b64decode(encoded))
+    assert package["request"]["plan"]==plan and package["request"]["offset"]==12
+    monkeypatch.setenv("OPERATION","stage")
+    assert request.main()==1
+    assert capsys.readouterr().out==""
+
+
+def test_ssh_child_environment_and_process_group_timeout_cleanup(tmp_path,monkeypatch):
+    import subprocess
+    _,plan,_=seeded(tmp_path,0)
+    work=tmp_path/"work"; work.mkdir(mode=0o700)
+    seen={}; killed=[]
+    class Process:
+        pid=123456789
+        def __init__(self,*args,**kwargs):
+            seen.update(kwargs); self.attempts=0
+        def wait(self,timeout=None):
+            self.attempts+=1
+            if self.attempts==1: raise subprocess.TimeoutExpired("fixture",timeout)
+            return 0
+    monkeypatch.setattr(op.subprocess,"Popen",Process)
+    monkeypatch.setattr(op.os,"killpg",lambda pid,sig:killed.append((pid,sig)))
+    monkeypatch.setenv("GH_TOKEN","PRIVATE_FIXTURE_WRITE_TOKEN")
+    monkeypatch.setenv("GITHUB_TOKEN","PRIVATE_FIXTURE_WRITE_TOKEN")
+    with pytest.raises(subprocess.TimeoutExpired):
+        op.ssh_fetch(12,5,plan,work/"batch.zip",checkout=ROOT,work=work,end=op.time.monotonic()+30)
+    assert "GH_TOKEN" not in seen["env"] and "GITHUB_TOKEN" not in seen["env"]
+    assert seen["start_new_session"] is True and killed==[(Process.pid,op.signal.SIGTERM)]
+    assert e.read_json(seen["env"]["OPERATION_PLAN_FILE"],1024*1024)==plan
