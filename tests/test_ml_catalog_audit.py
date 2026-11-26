@@ -26,7 +26,7 @@ def test_real_catalog_deterministic_readonly_and_offline(monkeypatch):
     assert not any(f["code"].endswith("mismatch") for r in one["matches"] for f in r["findings"])
     assert before=={str(p):m.digest(p) for p in paths}
     assert all(not r["coverage_complete"] and not r["pbp"]["full_match_verified"] for r in one["matches"])
-    assert sum(any(f["code"]=="pbp_rows_vs_service_points" for f in r["findings"]) for r in one["matches"])==8
+    assert sum(any(f["code"]=="pbp_version_link_unknown" and f["source"]=="nbbet_stats" and f["status"]=="UNKNOWN" for f in r["findings"]) for r in one["matches"])==8
     assert all(c["agrees"] for r in one["matches"] for c in r["stat_additivity"])
 
 def test_cli_from_other_directory(tmp_path):

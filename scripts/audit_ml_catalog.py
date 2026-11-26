@@ -9,6 +9,9 @@ from pathlib import Path
 import sys
 
 ROOT=Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(ROOT/"src"))
+
+from tennis_predictor.ml.canonical_layer.source import compatible_versions, source_observations
 SOURCES=("matches","nbbet_details","nbbet_stats","pbp","nbbet_raw")
 ADDITIVE=("aces","double_faults","first_serve_points_all","first_serve_points_won",
           "second_serve_points_all","second_serve_points_won","break_points_won",
@@ -117,6 +120,42 @@ def check_points(points):
             "point_types":sorted({str(p.get("point_type")) for p in points}),
             "findings":findings,"full_match_verified":False}
 
+
+def version_stats(observation):
+    findings=[]; stat_checks=[]
+    stats=observation.rows; by_scope=defaultdict(list)
+    for r in stats: by_scope[r.get("scope")].append(r)
+    for scope,values in by_scope.items():
+        if len(values)>1: findings.append({"code":"duplicate_stat_scope","scope":scope,"status":"CONFLICT"})
+    if len(by_scope.get(0,[]))==1:
+        total=by_scope[0][0]
+        for metric in ADDITIVE:
+            for n in (1,2):
+                field=metric+"_p"+str(n)
+                parts=[r.get(field) for r in stats if type(r.get("scope"))is int and r["scope"]>0]
+                value=total.get(field)
+                if value is not None and parts and all(v is not None for v in parts):
+                    ok=value==sum(parts)
+                    stat_checks.append({"field":field,"match":value,"set_sum":sum(parts),"agrees":ok})
+                    if not ok: findings.append({"code":"stat_set_sum","field":field,"status":"CONFLICT"})
+        for r in stats:
+            for n in (1,2):
+                for metric in ("first_serve_points","second_serve_points","break_points","service_games"):
+                    won=r.get(metric+"_won_p"+str(n)); all_=r.get(metric+"_all_p"+str(n))
+                    if won is not None and all_ is not None and not 0<=won<=all_:
+                        findings.append({"code":"invalid_ratio_counts","scope":r["scope"],"metric":metric,"status":"CONFLICT"})
+    return stat_checks,[dict(f,source_version=observation.version) for f in findings]
+
+
+def provenance(observation):
+    return {"source_version":observation.version,"evidence_ref":observation.reference,
+            "file_sha256":observation.file_hash,"object_key":observation.metadata.get("object_key"),
+            "object_version":observation.metadata.get("version_id"),
+            "object_sha256":observation.metadata.get("content_sha256"),
+            "etag":observation.metadata.get("etag"),
+            "object_last_modified":observation.metadata.get("last_modified"),
+            "ingested_at":observation.metadata.get("row_receipt")}
+
 def audit(catalog=None):
     catalog=Path(catalog) if catalog else ROOT/"docs/ml/data_catalog"
     index=read(catalog/"index.json"); matches=[]; totals=Counter(); errors=[]
@@ -135,72 +174,72 @@ def audit(catalog=None):
         encoded=(json.dumps(envelope,ensure_ascii=False,sort_keys=True,indent=2,allow_nan=False)+"\n").encode()
         if hashlib.sha256(encoded).hexdigest()!=expected_digest:
             findings.append({"code":"bundle_digest_mismatch","status":"CONFLICT"})
-        sources={}; rows={}
+        sources={}; observations={}; counts={}
         for name in SOURCES:
-            path=directory/(name+".json"); data=read(path)
-            if digest(path)!=manifest.get("files",{}).get(name+".json"):
+            path=directory/(name+".json"); data=read(path); file_hash=digest(path)
+            if file_hash!=manifest.get("files",{}).get(name+".json"):
                 findings.append({"code":"file_hash_mismatch","source":name,"status":"CONFLICT"})
             sources[name]=data
-            rows[name]=data.get("rows",[]) if name=="matches" else [r for v in data.get("versions",[]) for r in v.get("rows",[])]
-            totals[name]+=len(rows[name])
-            for i,r in enumerate(rows[name]):
-                if r.get("canonical_match_id",r.get("match_id"))!=mid:
-                    findings.append({"code":"row_join_mismatch","source":name,"row":i,"status":"CONFLICT"})
-        pg=rows["matches"][0] if len(rows["matches"])==1 else {}
-        if len(rows["matches"])!=1: findings.append({"code":"pg_row_count","status":"CONFLICT"})
-        details=rows["nbbet_details"]; results=[]
-        for i,d in enumerate(details):
-            sets=parse(d.get("sets_json")); candidate=score_candidate(sets,d.get("status"))
-            results.append({"row":i,"sets":sets,"status":d.get("status"),"bo3_score_candidate":candidate,
-                            "target_p1_win":None,"format_verified":False})
-            if d.get("status")!=pg.get("status"): findings.append({"code":"status_disagreement","status":"CONFLICT"})
-            players=parse(d.get("players_json"))
-            if players:
-                for n in (1,2):
-                    if (players.get("p"+str(n)) or {}).get("1")!=pg.get("player"+str(n)):
-                        findings.append({"code":"player_orientation_or_alias","player":n,"status":"CONFLICT"})
-            for raw in rows["nbbet_raw"]:
-                rm=(parse(raw.get("raw_json")) or {}).get("match",{})
-                if sets!=rm.get("24"): findings.append({"code":"raw_detail_score_disagreement","status":"CONFLICT"})
-                expected=[sum(set_winner(s)==n for s in sets or []) for n in (1,2)]
-                if expected!=[rm.get("7"),rm.get("8")]:
-                    findings.append({"code":"raw_set_count_disagreement","status":"CONFLICT"})
-        stats=rows["nbbet_stats"]; by_scope=defaultdict(list)
-        for r in stats: by_scope[r.get("scope")].append(r)
-        for scope,values in by_scope.items():
-            if len(values)>1: findings.append({"code":"duplicate_stat_scope","scope":scope,"status":"CONFLICT"})
+            batches=source_observations(name,data,str(path.relative_to(catalog)),file_hash)
+            counts[name]=sum(len(obs.rows) for obs in batches)
+            totals[name]+=counts[name]
+            observations[name]=batches
+            for obs in batches:
+                for i,r in zip(obs.row_indices,obs.rows,strict=True):
+                    if r.get("canonical_match_id",r.get("match_id"))!=mid:
+                        findings.append({"code":"row_join_mismatch","source":name,"row":i,
+                                         "source_version":obs.version,"status":"CONFLICT"})
+        match_observation=observations["matches"][0]
+        pg=match_observation.rows[0] if counts["matches"]==1 else {}
+        if counts["matches"]!=1:
+            findings.append({"code":"pg_row_count","status":"CONFLICT"})
+        results=[]
+        for detail in observations["nbbet_details"]:
+            supported_raw=[raw for raw in observations["nbbet_raw"]
+                           if compatible_versions(detail,raw,observations,mid)]
+            for i,d in zip(detail.row_indices,detail.rows,strict=True):
+                sets=parse(d.get("sets_json")); candidate=score_candidate(sets,d.get("status"))
+                results.append({**provenance(detail),"row":i,"sets":sets,"status":d.get("status"),
+                                "bo3_score_candidate":candidate,"target_p1_win":None,
+                                "format_verified":False})
+                if d.get("status")!=pg.get("status"):
+                    findings.append({"code":"metadata_status_version_link_unknown","status":"UNKNOWN",
+                                     "source_version":detail.version})
+                players=parse(d.get("players_json"))
+                if players:
+                    for n in (1,2):
+                        if (players.get("p"+str(n)) or {}).get("1")!=pg.get("player"+str(n)):
+                            findings.append({"code":"player_orientation_or_alias","player":n,
+                                             "source_version":detail.version,"status":"UNKNOWN"})
+                if counts["nbbet_raw"] and not supported_raw:
+                    findings.append({"code":"raw_detail_version_link_unknown","status":"UNKNOWN",
+                                     "source_version":detail.version})
+                for raw in supported_raw:
+                    for row in raw.rows:
+                        rm=(parse(row.get("raw_json")) or {}).get("match",{})
+                        versions={"source_version":detail.version,"compared_version":raw.version}
+                        if sets!=rm.get("24"):
+                            findings.append({"code":"raw_detail_score_disagreement","status":"CONFLICT",**versions})
+                        expected=[sum(set_winner(s)==n for s in sets or []) for n in (1,2)]
+                        if expected!=[rm.get("7"),rm.get("8")]:
+                            findings.append({"code":"raw_set_count_disagreement","status":"CONFLICT",**versions})
         stat_checks=[]
-        if len(by_scope.get(0,[]))==1:
-            total=by_scope[0][0]
-            for metric in ADDITIVE:
-                for n in (1,2):
-                    field=metric+"_p"+str(n)
-                    parts=[r.get(field) for r in stats if type(r.get("scope"))is int and r["scope"]>0]
-                    value=total.get(field)
-                    if value is not None and parts and all(v is not None for v in parts):
-                        ok=value==sum(parts)
-                        stat_checks.append({"field":field,"match":value,"set_sum":sum(parts),"agrees":ok})
-                        if not ok: findings.append({"code":"stat_set_sum","field":field,"status":"CONFLICT"})
-            for r in stats:
-                for n in (1,2):
-                    for metric in ("first_serve_points","second_serve_points","break_points","service_games"):
-                        won=r.get(metric+"_won_p"+str(n)); all_=r.get(metric+"_all_p"+str(n))
-                        if won is not None and all_ is not None and not 0<=won<=all_:
-                            findings.append({"code":"invalid_ratio_counts","scope":r["scope"],"metric":metric,"status":"CONFLICT"})
-        point=check_points(rows["pbp"])
-        for d in details:
-            sets=parse(d.get("sets_json")) or []
-            for i,s in enumerate(sets,1):
-                expected=s.get("score_team1",0)+s.get("score_team2",0)
-                observed=len(point["games_by_set"].get(str(i),[]))
-                if expected!=observed:
-                    findings.append({"code":"pbp_game_count_vs_score","set":i,"expected":expected,"observed":observed,"status":"CONFLICT"})
-        serve_total=None
-        if len(by_scope.get(0,[]))==1:
-            r=by_scope[0][0]; values=[r.get(k+"_p"+str(n)) for n in (1,2) for k in ("first_serve_points_all","second_serve_points_all")]
-            if all(v is not None for v in values): serve_total=sum(values)
-        if serve_total is not None and serve_total!=len(rows["pbp"]):
-            findings.append({"code":"pbp_rows_vs_service_points","observed":len(rows["pbp"]),"stats":serve_total,"status":"CONFLICT"})
+        for obs in observations["nbbet_stats"]:
+            checks,local_findings=version_stats(obs)
+            stat_checks.extend(dict(check,source_version=obs.version) for check in checks)
+            findings.extend(local_findings)
+        point_versions=[]
+        for obs in observations["pbp"]:
+            if not obs.rows:
+                continue
+            point_report=check_points(obs.rows)
+            point_versions.append({**provenance(obs),**point_report})
+            for source in ("nbbet_details","nbbet_stats"):
+                if counts[source]:
+                    findings.append({"code":"pbp_version_link_unknown","source":source,
+                                     "source_version":obs.version,"status":"UNKNOWN"})
+        point=(point_versions[0] if len(point_versions)==1 else
+               {"rows":counts["pbp"],"full_match_verified":False})
         states={}
         for name in SOURCES[1:]:
             versions=sources[name].get("versions",[])
@@ -209,16 +248,17 @@ def audit(catalog=None):
                            "rows_truncated":v.get("rows_truncated"),"scan_complete":v.get("object_scan_complete")} for v in versions]
             if not versions: states[name]=[{"state":"unavailable_for_verification","reason":"no_checked_object_in_catalog"}]
         matches.append({"match_id":mid,"evidence":str(entry["path"]),"metadata":pg,
-                        "counts":{k:len(v) for k,v in rows.items()},"source_states":states,
+                        "counts":counts,"source_states":states,
                         "odds_pair_valid":odds(pg.get("odds_open_p1"),pg.get("odds_open_p2")),
-                        "results":results,"stat_additivity":stat_checks,"pbp":point,
+                        "results":results,"stat_additivity":stat_checks,"pbp":point,"pbp_versions":point_versions,
+                        "source_versions":{k:[provenance(o) for o in v] for k,v in observations.items()},
                         "findings":findings,"coverage_complete":False})
     plans=[]
     for path in sorted((catalog/"acquisition-plans").glob("*.json")):
         p=read(path); selected=p.get("selected_ids",[])
         plans.append({"file":path.name,"selected":len(selected),"catalogued":sum(i in ids for i in selected),
                       "uncatalogued":[i for i in selected if i not in ids]})
-    return {"audit_version":"catalog-semantic-audit-v1","scope":"repository_snapshot_only",
+    return {"audit_version":"catalog-semantic-audit-v2","scope":"repository_snapshot_only",
             "match_count":len(matches),"records_by_source":dict(totals),"plans":plans,
             "matches":matches,"findings":errors,"production_access":False}
 

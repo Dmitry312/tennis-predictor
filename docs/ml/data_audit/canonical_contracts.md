@@ -1,6 +1,6 @@
-# Proposed canonical contracts (review required)
+# Proposed canonical contracts from the completed audit
 
-No tables, ETL, canonical policies or production processes are changed. Types below are logical SQL/Arrow types. Every entity is versioned: add the common fields below to EACH row in all 11 schemas. FK targets and composite keys are explicit; source-side orientation is never silently swapped. proposal = design, not a factual discovery. Source paths refer to the [coverage matrix](coverage.md), [loader](../../../src/tennis_predictor/ingestion/nbbet/details.py), [model](../../../src/tennis_predictor/storage/models.py) and [existing contracts](../canonical-match.md).
+The [Canonical Data Layer v1 guide](../canonical-layer.md) documents the implemented physical schemas and how they differ from this audit proposal. Types below are logical SQL/Arrow types. Every entity is versioned: add the common fields below to EACH row in all 11 schemas. FK targets and composite keys are explicit; source-side orientation is never silently swapped. proposal = design, not a factual discovery. Source paths refer to the [coverage matrix](coverage.md), [loader](../../../src/tennis_predictor/ingestion/nbbet/details.py), [model](../../../src/tennis_predictor/storage/models.py) and [existing contracts](../canonical-match.md).
 
 Common fields for every entity (same columns apply individually):
 
