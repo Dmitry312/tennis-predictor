@@ -10,6 +10,7 @@ sys.path.insert(0,str(ROOT))
 from scripts import export_match_samples as e
 from scripts.sample_delivery import LIMIT
 from scripts.review_staging import ticket
+from infra.audit.sample_diagnostics import at
 
 
 def capture(source, environ):
@@ -38,5 +39,7 @@ def capture(source, environ):
 
 
 if __name__=="__main__":
-    try: capture(sys.stdin.buffer,os.environ)
+    try:
+        with at("runner_capture"):
+            capture(sys.stdin.buffer,os.environ)
     except Exception: raise SystemExit(1)

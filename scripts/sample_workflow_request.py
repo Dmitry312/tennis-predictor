@@ -9,6 +9,7 @@ sys.path.insert(0,str(ROOT))
 from scripts import export_match_samples as e
 from scripts import build_sample_acquisition_payload as b
 from scripts.review_staging import review, ticket
+from infra.audit.sample_diagnostics import at
 
 
 def parameters(environ):
@@ -33,6 +34,13 @@ def parameters(environ):
 
 def main():
     try:
+        with at("runner_request"):
+            return execute_request()
+    except Exception:
+        return 1
+
+
+def execute_request():
         options=parameters(os.environ)
         if options["approval"]:
             # Review metadata only, never raw samples. Used by the isolated publish step.
@@ -40,9 +48,6 @@ def main():
                 json.dump(options["approval"],stream)
         sys.stdout.write(b.build(**options))
         return 0
-    except Exception:
-        print("sample_request_invalid",file=sys.stderr)
-        return 1
 
 
 if __name__=="__main__": raise SystemExit(main())
