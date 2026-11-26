@@ -173,13 +173,15 @@ else:
             env=self.environment(Path(tmp))
             payload=base64.b64encode(json.dumps({"request":{"allow_existing_root":True},
                 "files":{"PRIVATE_PATH":"PRIVATE_ROW"},"sha":SHA,"project":env["PROJECT_PATH"]}).encode()).decode()
-            code="import sys;sys.path.insert(0,"+repr(str(ROOT))+");from infra.audit.sample_acquisition_bootstrap import main;sys.exit(main("+repr(payload)+"))"
-            result=subprocess.run([str(self.python),"-I","-S","-c",code],
-                capture_output=True,text=True,env=env)
-            self.assertEqual(result.returncode,1)
-            self.assertIn("sample_diag:remote_bootstrap:error:payload_invalid",result.stderr)
-            self.assertNotIn("PRIVATE",result.stderr)
-            self.assertNotIn("Traceback",result.stderr)
+            for patch,expected in (("","payload_invalid"),("sys.version_info=(3,10,0);","python_version")):
+                with self.subTest(expected=expected):
+                    code="import sys;sys.path.insert(0,"+repr(str(ROOT))+");from infra.audit.sample_acquisition_bootstrap import main;"+patch+"sys.exit(main("+repr(payload)+"))"
+                    result=subprocess.run([str(self.python),"-I","-S","-c",code],
+                        capture_output=True,text=True,env=env)
+                    self.assertEqual(result.returncode,1)
+                    self.assertIn("sample_diag:remote_bootstrap:error:"+expected,result.stderr)
+                    self.assertNotIn("PRIVATE",result.stderr)
+                    self.assertNotIn("Traceback",result.stderr)
 
 
 if __name__=="__main__": unittest.main()

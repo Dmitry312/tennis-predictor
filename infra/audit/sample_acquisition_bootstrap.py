@@ -12,7 +12,7 @@ import tempfile
 FILES = ("scripts/acquire_match_samples.py","scripts/export_match_samples.py",
          "infra/audit/full_match_export.py","scripts/review_staging.py","scripts/sample_delivery.py",
          "infra/audit/sample_diagnostics.py")
-BOOT_REASONS = frozenset(("payload_invalid","root_policy","project_invalid",
+BOOT_REASONS = frozenset(("payload_invalid","python_version","root_policy","project_invalid",
                          "project_unavailable","code_staging","imports_failed"))
 _phase="payload_invalid"
 
@@ -34,6 +34,9 @@ def execute(payload):
     global _phase
     _phase="payload_invalid"
     boot_event("start")
+    _phase="python_version"
+    if sys.version_info < (3,11): raise ValueError()
+    _phase="payload_invalid"
     request=package_request(payload)
     _phase="root_policy"
     if os.geteuid()==0 and request.get("allow_existing_root") is not True: raise ValueError()
