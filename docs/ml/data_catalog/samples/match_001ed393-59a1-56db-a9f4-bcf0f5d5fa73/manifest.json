@@ -1,0 +1,45 @@
+{
+  "availability": "not_inferred_from_ingestion",
+  "bundle_digest": "5733593a3b7a7fb47224085c7a4f7cf7f98d77d7bcf284782b7267ef5d4298e4",
+  "coverage_complete": false,
+  "files": {
+    "matches.json": "a60015d576379dbc0bf097cfe412fcad976f062e4c9692a30bf4e816bfd0b65f",
+    "nbbet_details.json": "1e8dddf3d1e2e4c11e690e57cecba94bfe18563a4293772d6353fc9464308000",
+    "nbbet_raw.json": "d9ff2b34302da0bb802baeb82e3c27c5bde55aa5ecd8c890563d8ffa09ee7ac5",
+    "nbbet_stats.json": "5ac0f11f0dc7312a79ffe575afa20a69202e5064c6afc394447c59e2d7e9c9f3",
+    "pbp.json": "f2a72a284ba1fcc5aef1755ba4c1969b742b59377e53aca4b599e211d38c343f"
+  },
+  "format": "real-match-samples-v1",
+  "json_codec": "repository_json_value_v1_dates_uuid_decimal_as_strings_bytes_base64",
+  "limits": {
+    "file_rows": 100000,
+    "matches": 5,
+    "object_bytes": 8388608,
+    "objects": 100,
+    "output_bytes": 33554432,
+    "seconds": 240,
+    "source_rows": 5000,
+    "total_bytes": 134217728,
+    "total_rows": 300000,
+    "uncompressed_bytes": 134217728
+  },
+  "match_id": "001ed393-59a1-56db-a9f4-bcf0f5d5fa73",
+  "origin": "real_source_records",
+  "other_match_linked_tables": {
+    "candidates": [],
+    "truncated": false
+  },
+  "review": {
+    "content": "pending",
+    "owner_public_sports_approval": "2026-11-25",
+    "redistribution_rights": "pending"
+  },
+  "selection": {
+    "batch_offset": 0,
+    "batch_size": 2,
+    "mode": "first20_bounded_diverse",
+    "plan_sha256": "2c161258d768f17a129cb5643754f972524a2f2ea32f5104a23b23da8a44d34c",
+    "selection_shortfall": 0,
+    "target": 20
+  }
+}

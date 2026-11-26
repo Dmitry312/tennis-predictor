@@ -1,0 +1,70 @@
+{
+  "coverage": "exact_manifest_only_not_all_history",
+  "match_id": "001ed393-59a1-56db-a9f4-bcf0f5d5fa73",
+  "silent_version_selection": false,
+  "source": "nbbet_details",
+  "versions": [
+    {
+      "content_sha256": "ac1f833dbf38ebc40117504de2c2622efcd8ba0ea736636858a5062d2f802994",
+      "coverage": "selected_object_only",
+      "etag": "\"e39b232408d1b737ba32dba103baa89d\"",
+      "last_modified": "2026-10-06 00:39:08+00:00",
+      "matching_rows_observed": 1,
+      "object_key": "nbbet_details/gender=F/level=challenger/year=2026/part-20261005T211001-00042.parquet",
+      "requested_version": {
+        "current": true,
+        "key": "nbbet_details/gender=F/level=challenger/year=2026/part-20261005T211001-00042.parquet"
+      },
+      "rows": [
+        {
+          "canonical_match_id": "001ed393-59a1-56db-a9f4-bcf0f5d5fa73",
+          "extra_json": "{\"1\": false, \"2\": \"Эджбастон Прайори Клаб (Бирмингем)\", \"3\": \"+17°C\", \"4\": \"Пасмурно\"}",
+          "fetched_at": "2026-10-06 00:39:05.961809",
+          "has_coverage": true,
+          "nbbet_match_id": 719212,
+          "sets_json": "[{\"duration\": \"00:36\", \"score_team1\": 7, \"score_team2\": 6, \"tiebreak_score_team1\": 7, \"tiebreak_score_team2\": 2}, {\"duration\": \"00:51\", \"score_team1\": 6, \"score_team2\": 2, \"tiebreak_score_team1\": null, \"tiebreak_score_team2\": null}]",
+          "status": 3
+        }
+      ],
+      "rows_truncated": 0,
+      "schema": [
+        {
+          "name": "canonical_match_id",
+          "nullable": true,
+          "type": "large_string"
+        },
+        {
+          "name": "nbbet_match_id",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "status",
+          "nullable": true,
+          "type": "int64"
+        },
+        {
+          "name": "has_coverage",
+          "nullable": true,
+          "type": "bool"
+        },
+        {
+          "name": "sets_json",
+          "nullable": true,
+          "type": "large_string"
+        },
+        {
+          "name": "extra_json",
+          "nullable": true,
+          "type": "large_string"
+        },
+        {
+          "name": "fetched_at",
+          "nullable": true,
+          "type": "timestamp[us]"
+        }
+      ],
+      "version_id": null
+    }
+  ]
+}
