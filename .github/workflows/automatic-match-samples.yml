@@ -25,6 +25,7 @@ env:
   ALLOW_EXISTING_ROOT: 'true'
   # Versioned standard batch, also inherited by progress resolution and SSH request.
   BATCH_SIZE: '5'
+  PLAN_OPERATION: 'true'
   STAGE_TICKET: gh-${{ github.run_id }}-${{ github.run_attempt }}
 jobs:
   samples-to-pr:
@@ -34,7 +35,7 @@ jobs:
       contents: write
       pull-requests: write
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -48,24 +49,26 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SELECTION_PLAN: ${{ inputs.selection_plan }}
         run: python -I -S scripts/sample_progress.py
-      - name: Acquire bounded read-only sources with no GitHub token
+      - name: Complete remaining plan in sequential bounded batches
+        if: ${{ success() && env.OPERATION_COMPLETE != 'true' }}
         env:
           OPERATION: automatic
           MANIFEST_PATH: ${{ inputs.source_manifest }}
-          SAMPLE_ARCHIVE: ${{ runner.temp }}/automatic-sample.zip
+          OPERATION_DIR: ${{ runner.temp }}/sample-plan-operation
           SSH_HOST: ${{ secrets.SERVER_HOST }}
           SSH_USER: ${{ secrets.SERVER_USER }}
           SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
           SSH_FINGERPRINT: ${{ secrets.SERVER_HOST_FINGERPRINT }}
-        run: bash infra/audit/sample_ssh.sh
-      - name: Validate and create catalog JSON branch and PR under standing owner policy
+        run: python -I -S scripts/sample_operation.py
+      - name: Publish one fully validated plan result
+        if: ${{ success() && env.OPERATION_COMPLETE != 'true' }}
         env:
-          SAMPLE_ARCHIVE: ${{ runner.temp }}/automatic-sample.zip
+          OPERATION_DIR: ${{ runner.temp }}/sample-plan-operation
           GH_TOKEN: ${{ github.token }}
-        run: python -I -S scripts/publish_match_samples.py --automatic
-      - name: Clean runner transport bytes
+        run: timeout --kill-after=5s 180s python -I -S scripts/publish_match_samples.py --operation
+      - name: Clean private operation workspace
         if: ${{ always() }}
         shell: bash
         env:
-          SAMPLE_ARCHIVE: ${{ runner.temp }}/automatic-sample.zip
-        run: rm -f -- "$SAMPLE_ARCHIVE"
+          OPERATION_DIR: ${{ runner.temp }}/sample-plan-operation
+        run: rm -rf -- "$OPERATION_DIR"
