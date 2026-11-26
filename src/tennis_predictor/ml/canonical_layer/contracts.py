@@ -185,7 +185,6 @@ REQUIRED = {
     "evidence_status",
     "evidence_ref",
     "transform_version",
-    "recorded_at",
 }
 KEYS = {
     "players": {"player_id"},

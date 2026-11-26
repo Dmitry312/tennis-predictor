@@ -69,16 +69,18 @@ def price(value):
 
 
 class MatchTransform:
-    def __init__(self, bundle, config, recorded_at):
+    def __init__(self, bundle, config):
         self.bundle = bundle
         self.match_id = bundle.match_id
         self.config = config
-        self.recorded_at = recorded_at
         self.cutoff = instant(config.get("prediction_cutoff"))
         review = config.get("reviews", {}).get(self.match_id, {})
         self.review = (
             review if review.get("bundle_digest") == bundle.manifest["bundle_digest"] else {}
         )
+        self.recorded_at = instant(self.review.get("decision_at"))
+        if self.review.get("decision_at") is not None and self.recorded_at is None:
+            raise ValueError("Review decision_at needs an explicit UTC offset")
         self.tables = {name: [] for name in SCHEMAS}
         self.by_source = {}
         for observation in bundle.observations:
@@ -154,7 +156,9 @@ class MatchTransform:
         row = obs.rows[index]
         receipt = instant(row.get("fetched_at"), naive_utc=True)
         if available is not None and (
-            available > self.recorded_at or (receipt and available > receipt)
+            (self.recorded_at is None and receipt is None)
+            or (self.recorded_at is not None and available > self.recorded_at)
+            or (receipt is not None and available > receipt)
         ):
             return False
         if not self.selected_at_cutoff(obs):
@@ -316,7 +320,7 @@ class MatchTransform:
             )
 
     def identities(self):
-        registry = PlayerRegistry()
+        registry = PlayerRegistry(projection=True)
         observations = []
         for side in (1, 2):
             name = self.meta.get(f"player{side}")
@@ -330,7 +334,7 @@ class MatchTransform:
                 approved.get("identity_key")
                 and approved.get("evidence_ref")
                 and identity_at
-                and identity_at <= self.recorded_at
+                and (self.recorded_at is None or identity_at <= self.recorded_at)
             )
             if reviewed:
                 self.identity_recorded.append(identity_at)
@@ -357,18 +361,18 @@ class MatchTransform:
                             "reference": reference,
                             "actor": "canonical-v1",
                             "observed_at": None,
-                            "recorded_at": self.recorded_at.isoformat(),
+                            "recorded_at": self.review.get("decision_at"),
                         },
                     }
                 )
                 if event_id not in {item[1] for item in observations}
                 else observations[0][2]
             )
-            observations.append((side, event_id, pid, name, norm, reviewed, reference))
+            observations.append((side, event_id, pid, name, norm, reviewed, reference, identity_at))
         emitted_players = set()
         registry_version = registry.digest
         self.registry_version = registry_version
-        for side, _, pid, name, norm, reviewed, reference in observations:
+        for side, _, pid, name, norm, reviewed, reference, identity_at in observations:
             resolution = registry.resolve(self.meta["gender"], name)
             status = (
                 "quarantine"
@@ -390,6 +394,7 @@ class MatchTransform:
                     resolution_status=status,
                     registry_version=registry_version,
                     evidence_ref=reference,
+                    recorded_at=identity_at if reviewed else self.recorded_at,
                 )
                 emitted_players.add(pid)
             self.emit(
@@ -403,6 +408,7 @@ class MatchTransform:
                 normalized_name=norm,
                 registry_version=registry_version,
                 evidence_ref=reference,
+                recorded_at=identity_at if reviewed else self.recorded_at,
             )
         if all(self.players):
             self.player_status = (
@@ -581,7 +587,7 @@ class MatchTransform:
                         available is not None
                         and (
                             (self.event_time is not None and available <= self.event_time)
-                            or available > self.recorded_at
+                            or (self.recorded_at is not None and available > self.recorded_at)
                             or (received is not None and available > received)
                         )
                     )
@@ -612,6 +618,8 @@ class MatchTransform:
                     quality, reason = "conflict", "independent_result_disagrees"
                 elif available is None:
                     quality, reason = "unverified", "availability_unknown"
+                elif self.recorded_at is None and received is None:
+                    quality, reason = "unverified", "availability_upper_bound_unknown"
                 else:
                     quality, reason = "valid", "confirmed_completed_result"
                 self.quality(obs, "result", quality, reason, ref)

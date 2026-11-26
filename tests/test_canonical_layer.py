@@ -4,7 +4,7 @@ import json
 import shutil
 import socket
 from dataclasses import replace
-from datetime import UTC, date, datetime
+from datetime import date
 from pathlib import Path
 
 import pyarrow.parquet as pq
@@ -25,7 +25,6 @@ from tennis_predictor.ml.canonical_layer.transform import MatchTransform
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG = ROOT / "docs/ml/data_catalog"
 CONFIG = {"version": VERSION, "mode": "strict_as_of", "prediction_cutoff": None, "reviews": {}}
-RECORDED = datetime(2026, 11, 26, tzinfo=UTC)
 MATCH = "00035326-4450-5d09-b060-86a1f6851e63"
 
 
@@ -159,7 +158,7 @@ def test_confirmed_result_survives_missing_pbp_and_bad_break_points():
             for obs in bundle.observations
         ),
     )
-    data = MatchTransform(bundle, config, RECORDED).run()
+    data = MatchTransform(bundle, config).run()
     assert data["match_results"][0]["target_p1_win"] == 1
     assert data["match_results"][0]["player_state_eligible"] is True
     assert not data["match_player_pbp"]
@@ -179,29 +178,28 @@ def test_quarantine_and_provisional_identity():
     meta = observations["matches"]
     same = replace(meta, rows=[dict(meta.rows[0], player2=meta.rows[0]["player1"].upper())])
     ambiguous = replace(bundle, observations=(same, *bundle.observations[1:]))
-    data = MatchTransform(ambiguous, CONFIG, RECORDED).run()
+    data = MatchTransform(ambiguous, CONFIG).run()
     assert all(row["resolution_status"] == "quarantine" for row in data["players"])
     assert data["matches"][0]["player1_id"] is None
     assert data["matches"][0]["player2_id"] is None
     assert data["match_results"][0].get("target_p1_win") is None
-    normal = MatchTransform(bundle, CONFIG, RECORDED).run()
-    rebuilt = MatchTransform(bundle, CONFIG, datetime(2026, 11, 27, tzinfo=UTC)).run()
-    assert [r["player_id"] for r in normal["players"]] == [
-        r["player_id"] for r in rebuilt["players"]
-    ]
-    assert all(r["resolution_status"] == "provisional" for r in normal["players"])
+    normal = MatchTransform(bundle, CONFIG).run()
+    assert all(
+        r["resolution_status"] == "provisional" and r["recorded_at"] is None
+        for r in normal["players"]
+    )
 
 
 def test_no_implicit_format_and_supported_deciders():
     bundle, _, config = reviewed_bundle()
-    strict = MatchTransform(bundle, CONFIG, RECORDED).run()["match_results"][0]
+    strict = MatchTransform(bundle, CONFIG).run()["match_results"][0]
     assert strict["source_candidate_winner_side"] == 1
     assert strict["best_of"] is None
     assert strict["target_p1_win"] is None
     assert strict["sets"][0]["duration_raw"] is not None
     review = config["reviews"][MATCH]
     review["tournament"]["best_of"] = 5
-    five = MatchTransform(bundle, config, RECORDED).run()["match_results"][0]
+    five = MatchTransform(bundle, config).run()["match_results"][0]
     assert five["target_p1_win"] is None
     assert five["exclusion_reason"] == "incomplete_match"
 
@@ -344,7 +342,7 @@ def test_divergent_duplicates_in_same_version_are_flagged():
             {"pbp": bad_pbp, "nbbet_stats": bad_stats}.get(o.source, o) for o in bundle.observations
         ),
     )
-    quality = MatchTransform(bundle, CONFIG, RECORDED).run()["data_quality"]
+    quality = MatchTransform(bundle, CONFIG).run()["data_quality"]
     assert {"invalid_or_divergent_scope", "invalid_or_divergent_point_key"} <= {
         r["reason"] for r in quality if r["status"] == "conflict"
     }
@@ -363,7 +361,7 @@ def test_atomic_failure_and_integrity_checks(tmp_path, monkeypatch):
     changed = {**CONFIG, "prediction_cutoff": "2020-01-01T00:00:00Z"}
     with pytest.raises(OSError, match="simulated"):
         storage.build(adapter, output, changed)
-    assert (root / "CURRENT").read_text().strip() == first["version"]
+    assert storage.read_pointer(root / "CURRENT")["version"] == first["version"]
     assert {path.name for path in (root / "versions").iterdir()} == {first["version"]}
     assert not list(root.glob(".stage-*"))
     input_path = adapter.root / "samples" / f"match_{MATCH}" / "pbp.json"
@@ -407,9 +405,89 @@ def test_pbp_reconciliation_requires_compatible_versions():
     bundle = replace(
         bundle, observations=tuple(limited if o.source == "pbp" else o for o in bundle.observations)
     )
-    quality = MatchTransform(bundle, config, RECORDED).run()["data_quality"]
+    quality = MatchTransform(bundle, config).run()["data_quality"]
     assert any(r["reason"] == "compatible_result_unproven" for r in quality)
     review["compatible_versions"].append([points.version, details.version])
-    data = MatchTransform(bundle, config, RECORDED).run()
+    data = MatchTransform(bundle, config).run()
     assert any(r["reason"] == "observed_games_below_result" for r in data["data_quality"])
     assert data["match_results"][0]["target_p1_win"] == 1
+
+
+def file_hashes(folder):
+    return {
+        str(path.relative_to(folder)): storage.checksum(path)
+        for path in folder.rglob("*")
+        if path.is_file()
+    }
+
+
+@pytest.mark.parametrize("mode", ["strict_as_of", "historical_research_replay"])
+def test_clean_and_incremental_snapshots_are_byte_identical_across_clocks(
+    tmp_path, monkeypatch, mode
+):
+    class Clock:
+        value = instant("2019-01-01T00:00:00Z")
+
+        @staticmethod
+        def now(tz):
+            return Clock.value.astimezone(tz)
+
+    monkeypatch.setattr(storage, "datetime", Clock)
+    _, _, config = reviewed_bundle()
+    config["mode"] = mode
+    config["reviews"][MATCH]["decision_at"] = "2026-11-26T00:00:00Z"
+    other = "00015aa9-3aec-5c74-a4cc-530822107e82"
+    adapter = copy_matches(tmp_path / "catalog", MATCH, other)
+    clean_early = tmp_path / "clean-early"
+    first = storage.build(adapter, clean_early, config)
+    incremental_root = tmp_path / "incremental"
+    subset = storage.build(copy_matches(tmp_path / "subset", MATCH), incremental_root, config)
+
+    Clock.value = instant("2030-01-01T00:00:00Z")
+    clean_late = tmp_path / "clean-late"
+    second = storage.build(adapter, clean_late, config)
+    incremental = storage.build(adapter, incremental_root, config)
+    assert first["published_at"] != second["published_at"] == incremental["published_at"]
+    assert first["version"] == second["version"] == incremental["version"]
+    assert incremental["changes"] == {"new": 1, "changed": 0, "skipped": 1, "removed": 0}
+    first_dir = snapshot(clean_early, first)
+    incremental_dir = snapshot(incremental_root, incremental)
+    assert file_hashes(first_dir) == file_hashes(snapshot(clean_late, second))
+    assert file_hashes(first_dir) == file_hashes(incremental_dir)
+    assert (incremental_dir / "shards" / MATCH / "matches.parquet").samefile(
+        snapshot(incremental_root, subset) / "shards" / MATCH / "matches.parquet"
+    )
+    result = next(row for row in table(first_dir, "match_results") if row["match_id"] == MATCH)
+    assert result["target_p1_win"] == 1 and result["player_state_eligible"]
+    assert result["recorded_at"] == instant("2026-11-26T00:00:00Z")
+    assert result["available_at"] == instant("2026-01-01T00:00:00Z")
+    quality = json.loads((first_dir / "quality_report.json").read_bytes())
+    assert {"published_at", "changes", "invalidation"}.isdisjoint(quality)
+    for row in table(first_dir, "players"):
+        expected = (
+            None if row["resolution_status"] == "provisional" else instant("2021-01-01T00:00:00Z")
+        )
+        assert row["recorded_at"] == expected
+
+
+def test_decision_time_and_receipt_bound_reviewed_availability():
+    bundle, observations, config = reviewed_bundle()
+    review = config["reviews"][MATCH]
+    review["decision_at"] = "2025-01-01T00:00:00Z"
+    result = MatchTransform(bundle, config).run()["match_results"][0]
+    assert result["target_p1_win"] is None
+    assert result["exclusion_reason"] == "conflicting_result_evidence"
+
+    review.pop("decision_at")
+    detail = observations["nbbet_details"]
+    without_receipt = replace(detail, rows=[dict(row, fetched_at=None) for row in detail.rows])
+    bundle = replace(
+        bundle,
+        observations=tuple(
+            without_receipt if obs.source == detail.source else obs for obs in bundle.observations
+        ),
+    )
+    result = MatchTransform(bundle, config).run()["match_results"][0]
+    assert result["recorded_at"] is None and result["available_at"] is not None
+    assert result["target_p1_win"] is None
+    assert result["exclusion_reason"] == "availability_upper_bound_unknown"

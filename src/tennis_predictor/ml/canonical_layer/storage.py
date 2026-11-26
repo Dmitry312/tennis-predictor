@@ -3,12 +3,14 @@
 import fcntl
 import json
 import os
+import platform
 import shutil
 import tempfile
 from collections import Counter
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
+from unicodedata import unidata_version
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -17,6 +19,8 @@ from .contracts import MODES, SCHEMAS, VERSION
 from .evidence import encoded, fingerprint, instant
 from .source import SOURCES
 from .transform import MatchTransform
+
+SNAPSHOT_FORMAT = "content-addressed-v1"
 
 
 def checksum(path):
@@ -40,8 +44,19 @@ def manifest_for(root, version):
     if len(version) != 64 or any(c not in "0123456789abcdef" for c in version):
         raise ValueError("Invalid snapshot pointer")
     folder = root / "versions" / version
-    manifest = json.loads((folder / "manifest.json").read_bytes())
-    if fingerprint(manifest["inputs"]) != version or manifest["version"] != version:
+    manifest_bytes = (folder / "manifest.json").read_bytes()
+    manifest = json.loads(manifest_bytes)
+    snapshot_format = manifest.get("snapshot_format")
+    if snapshot_format is None:
+        # Older snapshots retain their input-addressed IDs and are never rewritten.
+        addressed = manifest["inputs"]
+    elif snapshot_format == SNAPSHOT_FORMAT:
+        if manifest_bytes != encoded(manifest):
+            raise ValueError("Non-canonical snapshot manifest")
+        addressed = {key: value for key, value in manifest.items() if key != "version"}
+    else:
+        raise ValueError("Unsupported snapshot format")
+    if fingerprint(addressed) != version or manifest["version"] != version:
         raise ValueError("Snapshot version mismatch")
     if checksum(folder / "quality_report.json") != manifest["report_sha256"]:
         raise ValueError("Quality report checksum mismatch")
@@ -49,19 +64,24 @@ def manifest_for(root, version):
         path = folder / f"{name}.parquet"
         if artifact(path) != expected:
             raise ValueError(f"Invalid Parquet artifact: {path}")
+    if snapshot_format == SNAPSHOT_FORMAT:
+        for mid, shard in manifest["shards"].items():
+            for name, expected in shard["files"].items():
+                path = folder / "shards" / mid / f"{name}.parquet"
+                if artifact(path) != expected:
+                    raise ValueError(f"Invalid Parquet artifact: {path}")
     return folder, manifest
 
 
-def copy_shard(previous, destination, metadata):
+def copy_shard(previous, destination):
     destination.mkdir(parents=True)
-    for name, schema in SCHEMAS.items():
+    for name in SCHEMAS:
         file = f"{name}.parquet"
-        verify_parquet(previous / file, metadata["files"][name], schema)
         os.link(previous / file, destination / file)
 
 
-def write_shard(path, bundle, config, recorded_at):
-    tables = MatchTransform(bundle, config, recorded_at).run()
+def write_shard(path, bundle, config):
+    tables = MatchTransform(bundle, config).run()
     path.mkdir(parents=True)
     files = {}
     for name, schema in SCHEMAS.items():
@@ -109,14 +129,7 @@ def write_outputs(stage, match_ids):
     return files
 
 
-def report_for(version, config, shards, outputs, changes, previous):
-    affected = set(changes["new"] + changes["changed"] + changes["removed"])
-    dates, players = set(), set()
-    for mid in affected:
-        for entry in (previous.get(mid, {}), shards.get(mid, {})):
-            if entry.get("match_date"):
-                dates.add(entry["match_date"])
-            players.update(entry.get("players", []))
+def quality_report(config, shards, outputs):
     quality, by_source = {}, {}
     reasons, statuses, source_rows = Counter(), Counter(), Counter()
     for info in shards.values():
@@ -127,14 +140,11 @@ def report_for(version, config, shards, outputs, changes, previous):
             by_source.setdefault(source, {}).setdefault(category, Counter())[status] += count
             if status != "valid":
                 reasons[reason] += count
-    change_counts = {key: len(value) for key, value in changes.items()}
     return {
-        "version": version,
         "transform_version": VERSION,
         "mode": config["mode"],
         "prediction_cutoff": config.get("prediction_cutoff"),
         "processed_matches": len(shards),
-        "changes": change_counts,
         "source_files": len(SOURCES) * len(shards),
         "source_rows": dict(source_rows),
         "rows": {name: item["rows"] for name, item in outputs.items()},
@@ -146,6 +156,21 @@ def report_for(version, config, shards, outputs, changes, previous):
         "missing_checks": sum(group["missing"] for group in quality.values()),
         "conflicting_checks": sum(group["conflict"] for group in quality.values()),
         "restriction_reasons": dict(reasons),
+    }
+
+
+def run_report(quality, publication, changes, previous, shards):
+    affected = set(changes["new"] + changes["changed"] + changes["removed"])
+    dates, players = set(), set()
+    for mid in affected:
+        for entry in (previous.get(mid, {}), shards.get(mid, {})):
+            if entry.get("match_date"):
+                dates.add(entry["match_date"])
+            players.update(entry.get("players", []))
+    return {
+        **quality,
+        **publication,
+        "changes": {key: len(value) for key, value in changes.items()},
         "invalidation": {
             "match_ids": sorted(affected),
             "player_ids": sorted(players),
@@ -156,14 +181,23 @@ def report_for(version, config, shards, outputs, changes, previous):
     }
 
 
+def read_pointer(path):
+    raw = path.read_text().strip()
+    if raw.startswith("{"):
+        return json.loads(raw)
+    return {"version": raw, "published_at": None}
+
+
 def update_pointer(root, version):
+    publication = {"version": version, "published_at": datetime.now(UTC).isoformat()}
     with tempfile.NamedTemporaryFile(dir=root, prefix=".current-", delete=False) as stream:
         path = Path(stream.name)
-        stream.write((version + "\n").encode())
+        stream.write(encoded(publication))
     try:
         os.replace(path, root / "CURRENT")
     finally:
         path.unlink(missing_ok=True)
+    return publication
 
 
 def build(adapter, output, config):
@@ -179,7 +213,7 @@ def build(adapter, output, config):
 
 
 def build_locked(adapter, root, config):
-    entries = dict(adapter.entries())
+    entries = dict(sorted(adapter.entries()))
     general = {k: v for k, v in config.items() if k != "reviews"}
     ml = Path(__file__).parent.parent
     sources = (
@@ -189,7 +223,16 @@ def build_locked(adapter, root, config):
         ml.parent / "ingestion/nbbet/pbp_parsing.py",
     )
     code_hash = fingerprint({p.name: checksum(p) for p in sources})
+    runtime = {
+        "python": platform.python_version(),
+        "unicode": unidata_version,
+        "pyarrow": pa.__version__,
+        "arrow_cpp": pa.cpp_build_info.version,
+        "arrow_package": pa.cpp_build_info.package_kind,
+        "platform": [platform.system(), platform.machine()],
+    }
     inputs = {
+        "runtime": runtime,
         "transform": VERSION,
         "code_sha256": code_hash,
         "config_sha256": fingerprint(config),
@@ -197,19 +240,19 @@ def build_locked(adapter, root, config):
             mid: {
                 "manifest_sha256": sha,
                 "transform_sha256": fingerprint(
-                    [code_hash, general, config.get("reviews", {}).get(mid)]
+                    [code_hash, runtime, general, config.get("reviews", {}).get(mid)]
                 ),
             }
             for mid, sha in entries.items()
         },
     }
-    version = fingerprint(inputs)
     pointer = root / "CURRENT"
     previous_folder = None
     previous = {}
     previous_inputs = {}
-    if pointer.exists():
-        previous_folder, old = manifest_for(root, pointer.read_text().strip())
+    current = read_pointer(pointer) if pointer.exists() else None
+    if current:
+        previous_folder, old = manifest_for(root, current["version"])
         previous = old["shards"]
         previous_inputs = old["inputs"]["matches"]
     changes = {
@@ -227,49 +270,43 @@ def build_locked(adapter, root, config):
         "removed": sorted(set(previous) - set(entries)),
     }
     root.joinpath("versions").mkdir(exist_ok=True)
-    target = root / "versions" / version
-    if target.exists():
-        _, existing = manifest_for(root, version)
+    if current and old.get("snapshot_format") == SNAPSHOT_FORMAT and old["inputs"] == inputs:
         for mid, sha in entries.items():
-            # Check local sample bytes even when the index promises unchanged content.
             adapter.verify(mid, sha)
-        report = report_for(
-            version, config, existing["shards"], existing["outputs"], changes, previous
-        )
-        update_pointer(root, version)
-        return report
+        quality = json.loads((previous_folder / "quality_report.json").read_bytes())
+        return run_report(quality, current, changes, previous, previous)
     stage = Path(tempfile.mkdtemp(dir=root, prefix=".stage-"))
     try:
-        recorded = datetime.now(UTC)
         shards = {}
         unchanged = set(changes["skipped"])
         for mid, sha in entries.items():
             destination = stage / "shards" / mid
             if mid in unchanged:
                 adapter.verify(mid, sha)
-                copy_shard(previous_folder / "shards" / mid, destination, previous[mid])
+                copy_shard(previous_folder / "shards" / mid, destination)
                 shards[mid] = previous[mid]
             else:
-                shards[mid] = write_shard(destination, adapter.load(mid, sha), config, recorded)
+                shards[mid] = write_shard(destination, adapter.load(mid, sha), config)
         outputs = write_outputs(stage, entries)
-        report = report_for(version, config, shards, outputs, changes, previous)
-        (stage / "quality_report.json").write_bytes(encoded(report))
-        (stage / "manifest.json").write_bytes(
-            encoded(
-                {
-                    "version": version,
-                    "inputs": inputs,
-                    "outputs": outputs,
-                    "shards": shards,
-                    "recorded_at": recorded.isoformat(),
-                    "report_sha256": checksum(stage / "quality_report.json"),
-                }
-            )
-        )
+        quality = quality_report(config, shards, outputs)
+        (stage / "quality_report.json").write_bytes(encoded(quality))
+        manifest = {
+            "snapshot_format": SNAPSHOT_FORMAT,
+            "inputs": inputs,
+            "outputs": outputs,
+            "shards": shards,
+            "report_sha256": checksum(stage / "quality_report.json"),
+        }
+        version = fingerprint(manifest)
+        (stage / "manifest.json").write_bytes(encoded({**manifest, "version": version}))
         for name, schema in SCHEMAS.items():
             verify_parquet(stage / f"{name}.parquet", outputs[name], schema)
-        stage.rename(target)
-        update_pointer(root, version)
-        return report
+        target = root / "versions" / version
+        if target.exists():
+            manifest_for(root, version)
+        else:
+            stage.rename(target)
+        publication = update_pointer(root, version)
+        return run_report(quality, publication, changes, previous, shards)
     finally:
         shutil.rmtree(stage, ignore_errors=True)

@@ -4,15 +4,15 @@ Snapshots contain private aliases/provenance. Do not log or upload real snapshot
 No network, database, application configuration, fuzzy matching or automatic merges.
 """
 import copy
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
 import hashlib
 import json
 import os
-from pathlib import Path
 import tempfile
 import unicodedata
 import uuid
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from pathlib import Path
 
 SCHEMA_VERSION = "player-registry-v1"
 NORMALIZATION_VERSION = "nfc-lower-space-v1"
@@ -60,9 +60,9 @@ def event_uuid(value):
 def instant(value):
     try:
         check(type(value) is str)
-        result = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        result = datetime.fromisoformat(value)
         check(result.tzinfo is not None and result.utcoffset() is not None)
-        return result.astimezone(timezone.utc)
+        return result.astimezone(UTC)
     except (ValueError, TypeError, OverflowError):
         raise IdentityError("invalid_time") from None
 
@@ -94,7 +94,9 @@ class Resolution:
 
 class PlayerRegistry:
     """Single-writer journal. apply() is explicit, resolve() never mutates state."""
-    def __init__(self):
+    def __init__(self, *, projection=False):
+        # A per-match projection is ephemeral and may have no recorded decision time.
+        self._projection = projection
         self._events = []
         self._event_ids = {}
         self._players = {}
@@ -144,11 +146,16 @@ class PlayerRegistry:
             "source", "reference", "actor", "observed_at", "recorded_at"}, "invalid_provenance")
         for key in ("source", "reference", "actor"):
             text(p[key])
-        recorded = instant(p["recorded_at"])
+        recorded = p["recorded_at"]
+        if recorded is not None or not self._projection:
+            recorded = instant(recorded)
         if p["observed_at"] is not None:
-            check(instant(p["observed_at"]) <= recorded, "future_evidence")
+            check(recorded is not None and instant(p["observed_at"]) <= recorded, "future_evidence")
         if self._events:
-            check(recorded >= instant(self._events[-1]["provenance"]["recorded_at"]), "journal_order")
+            previous = self._events[-1]["provenance"]["recorded_at"]
+            check((recorded is None and previous is None) or (
+                recorded is not None and previous is not None and recorded >= instant(previous)
+            ), "journal_order")
         if op in ("create", "alias"):
             normalized = normalize_name(event["name"])
             if op == "create":
@@ -201,12 +208,12 @@ class PlayerRegistry:
 
     def at_revision(self, revision):
         check(type(revision) is int and 0 <= revision <= self.revision, "invalid_revision")
-        return self.replay(self._events[:revision])
+        return self.replay(self._events[:revision], projection=self._projection)
 
     @classmethod
-    def replay(cls, events):
+    def replay(cls, events, *, projection=False):
         check(type(events) in (list, tuple) and len(events) <= MAX_EVENTS, "event_limit")
-        registry = cls()
+        registry = cls(projection=projection)
         seen = set()
         for event in events:
             check(type(event) is dict and type(event.get("event_id")) is str, "invalid_event")
@@ -216,6 +223,7 @@ class PlayerRegistry:
         return registry
 
     def to_json(self):
+        check(not self._projection, "ephemeral_projection")
         envelope = self._envelope()
         envelope["digest"] = self.digest
         raw = canonical(envelope)
