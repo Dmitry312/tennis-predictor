@@ -32,7 +32,7 @@ guards remain. All risk controls, including manual merge, still apply.
 
 One dispatch computes the remaining plan → sequentially reads/validates bounded
 PostgreSQL/S3 batches → creates
-a dedicated samples/first20-gh-<run>-<attempt> branch and PR into ML. No repeated
+a dedicated stable samples/first20-plan-<operation-hash> branch and PR into ML. No repeated
 content_reviewed/content_evidence/rights_reviewed/rights_evidence inputs or substitutes,
 manual certificate, archive download, import or separate publication dispatch.
 The project owner's standing decision is recorded once in publication-policy.json
@@ -40,7 +40,7 @@ and ../real-data-review-policy.md. It permits ordinary original sports records;
 it does not establish any third-party licence. Content eligibility remains the
 owner's responsibility; no manifest or receipt claims legal review/certification.
 
-The source job returns a bounded ZIP through pinned SSH, directly into a private
+Each internal source call returns a bounded ZIP through pinned SSH, directly into a private
 0600 runner file. There is no plaintext Actions artifact or raw-row log. The
 runner verifies the exact ZIP file set, schemas/manifest hashes, provenance,
 source SHA, plan hash, batch count and automatic secret/contact guards before any
@@ -131,8 +131,10 @@ no retries, <=100 objects/200 operations, <=8 MiB/object, <=128 MiB input.
 Decode bounds remain 100000 rows/file, 300000 total, 5000 retained per
 match/object/version, 128 MiB uncompressed/file or batch, 128 columns/groups,
 bounded Thrift. PG JSON <=1 MiB/row, catalog <=32 MiB, transport <=64 MiB.
-Address space <=4 GiB; 240s inner deadline, 260s remote +5s kill, 290s SSH,
-10-minute Actions job. No new queries broaden these budgets.
+Per-source-process address space <=4 GiB; per-batch deadlines remain 240s inner,
+260s remote +5s kill and 290s SSH. The whole operation has a 1200s collection
+deadline, <=2 GiB runner address space and a 25-minute Actions job; see
+plan-operation.md for aggregate byte/request/storage caps. No new queries broaden these budgets.
 
 All explicit source versions, content hashes and original records remain separate.
 Missing pointers, objects, joins, rows, raw data, truncation and unknown history
