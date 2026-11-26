@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from tennis_predictor.ml.canonical_layer.evidence import encoded
 from tennis_predictor.ml.identity_review.staging import (
+    VERSION,
     CatalogSource,
     extract,
     postgres_from_environment,
@@ -35,7 +36,7 @@ def main():
             sleep(0.1)
     else:
         raise ValueError("Unknown identity source")
-    output = args.output or ROOT / "data/ml/identity-review" / mode
+    output = args.output or ROOT / "data/ml/identity-review" / VERSION / mode
     staging = output / "evidence.sqlite"
     registry = args.registry or output / "registry.sqlite"
     state = extract(staging, source, pace=pace)

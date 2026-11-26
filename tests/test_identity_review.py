@@ -11,8 +11,12 @@ pytest.importorskip("openpyxl")
 from openpyxl import load_workbook
 
 from tennis_predictor.ml.identity_review import staging
-from tennis_predictor.ml.identity_review.registry import ReviewedMappings, import_review
-from tennis_predictor.ml.identity_review.workbook import GROUP, OBS, create_workbook
+from tennis_predictor.ml.identity_review.registry import (
+    ExactAliasPolicy,
+    ReviewedMappings,
+    import_review,
+)
+from tennis_predictor.ml.identity_review.workbook import ALIAS, GROUP, OBS, create_workbook
 
 ROOT = Path(__file__).resolve().parents[1]
 RECORDED = "2026-11-26T10:00:00Z"
@@ -63,7 +67,9 @@ def stage_packet(tmp_path, rows):
 def change_packet(path, output, actions, *, sheet="Observations0001", formula=False):
     book = load_workbook(path)
     target = book[sheet]
-    width = len(OBS if sheet.startswith("Observations") else GROUP)
+    width = len(
+        OBS if sheet.startswith("Observations") else ALIAS if sheet.startswith("Aliases") else GROUP
+    )
     for row, action in actions.items():
         for i, value in enumerate(action, width + 1):
             cell = target.cell(row, i, value)
@@ -71,6 +77,16 @@ def change_packet(path, output, actions, *, sheet="Observations0001", formula=Fa
                 cell.data_type = "s"
     book.save(output)
     book.close()
+
+
+def alias_row(path, name):
+    book = load_workbook(path, read_only=True)
+    try:
+        return next(
+            index for index, row in enumerate(book["Aliases0001"].values, 1) if row[4] == name
+        )
+    finally:
+        book.close()
 
 
 def observed(stage, n, side):
@@ -100,7 +116,8 @@ def test_real_catalog_excel_and_empty_registry(tmp_path, monkeypatch):
         create_workbook(stage, registry, packet)
     book = load_workbook(packet, read_only=True)
     try:
-        assert len(list(book["Observations0001"].values)) == 41
+        assert len(list(book["Observations0001"].values)) == 1
+        assert len(list(book["Aliases0001"].values)) == 41
         assert len(list(book["Singletons0001"].values)) == 41
         assert "Owner questions" in book.sheetnames
     finally:
@@ -163,7 +180,7 @@ def test_review_round_trip_aliases_and_explicit_correction(tmp_path):
         approval,
         {
             2: ("approve", "P0001", "Owner verifies first observation"),
-            4: ("merge", "P0001", "Owner verifies cross-script alias"),
+            3: ("merge", "P0001", "Owner verifies cross-script alias"),
         },
     )
     first = import_review(stage, registry, approval, reviewer="owner", recorded_at=RECORDED)
@@ -194,7 +211,7 @@ def test_review_round_trip_aliases_and_explicit_correction(tmp_path):
     next_packet = tmp_path / "next.xlsx"
     create_workbook(stage, registry, next_packet)
     correction = tmp_path / "split.xlsx"
-    change_packet(next_packet, correction, {4: ("split", "P0002", "Owner identifies a homonym")})
+    change_packet(next_packet, correction, {3: ("split", "P0002", "Owner identifies a homonym")})
     second = import_review(stage, registry, correction, reviewer="owner", recorded_at=RECORDED)
     assert second["earliest_affected_date"] == "2024-03-15"
     changed = list(api.invalidations(2))
@@ -209,7 +226,7 @@ def test_review_round_trip_aliases_and_explicit_correction(tmp_path):
         import_review(stage, registry, correction, reviewer="owner", recorded_at=RECORDED) == second
     )
     stale = tmp_path / "stale.xlsx"
-    change_packet(next_packet, stale, {4: ("reject", "", "Another unimported decision")})
+    change_packet(next_packet, stale, {3: ("reject", "", "Another unimported decision")})
     with pytest.raises(ValueError, match="Stale workbook"):
         import_review(stage, registry, stale, reviewer="owner", recorded_at=RECORDED)
 
@@ -328,7 +345,12 @@ def test_postgres_page_is_bound_and_readonly():
 def test_changed_source_quarantines_old_mapping_and_invalidates_both_dates(tmp_path):
     stage, registry, packet = stage_packet(tmp_path, [match(1)])
     approved = tmp_path / "approved.xlsx"
-    change_packet(packet, approved, {2: ("approve", "P0001", "Confirmed occurrence")})
+    change_packet(
+        packet,
+        approved,
+        {alias_row(packet, "Иванов И."): ("approve", "P0001", "Confirmed alias")},
+        sheet="Aliases0001",
+    )
     import_review(stage, registry, approved, reviewer="owner", recorded_at=RECORDED)
     original = observed(stage, 1, 1)
     revised_stage = tmp_path / "corrected.sqlite"
@@ -384,3 +406,114 @@ def test_split_exact_homonyms_and_partitioned_review(tmp_path, monkeypatch):
         mapping.mapping(third["match_id"], 1, observation_sha256=third["row_hash"])["status"]
         == "quarantine"
     )
+
+
+def test_new_match_resolves_only_approved_exact_alias(tmp_path):
+    stage, registry, packet = stage_packet(tmp_path, [match(1)])
+    reviewed = tmp_path / "approved.xlsx"
+    alias = alias_row(packet, "Иванов И.")
+    change_packet(
+        packet,
+        reviewed,
+        {alias: ("approve", "P0001", "Owner verifies NBBet alias")},
+        sheet="Aliases0001",
+    )
+    import_review(stage, registry, reviewed, reviewer="owner", recorded_at=RECORDED)
+    api = ReviewedMappings(registry)
+    policy = ExactAliasPolicy("synthetic owner authorization")
+    manual = api.resolve_match(match(1), source="nbbet")[0]
+    assert manual["status"] == "verified" and manual["provenance"] == "manual_review"
+    new = match(2, "  ИВАНОВ И. ", start_ts="2024-03-16T10:00:00")
+    assert api.resolve_match(new, source="nbbet")[0]["reason"] == "alias_policy_inactive"
+    automatic, opponent = api.resolve_match(new, source="nbbet", policy=policy)
+    assert automatic["status"] == "rule_resolved" and automatic["player_id"] == manual["player_id"]
+    assert automatic["alias_evidence_revision"] == 1
+    assert opponent["reason"] == "new_alias"
+    assert (
+        api.resolve_match(new, source="other", policy=policy)[0]["reason"]
+        == "source_or_gender_unproven"
+    )
+    assert (
+        api.resolve_match({**new, "player1": "Ivanov I."}, source="nbbet", policy=policy)[0][
+            "reason"
+        ]
+        == "new_alias"
+    )
+    assert (
+        api.resolve_match(match(3), source="nbbet", policy=policy)[0]["reason"]
+        == "same_start_distinct_matches"
+    )
+    other = {**new, "player2": "Иванов И."}
+    assert all(
+        r["reason"] == "opposing_sides"
+        for r in api.resolve_match(other, source="nbbet", policy=policy)
+    )
+    assert (
+        api.resolve_match({**match(1), "player1": "ИВАНОВ И."}, source="nbbet", policy=policy)[0][
+            "reason"
+        ]
+        == "rejected_or_changed_evidence"
+    )
+
+
+def test_streamed_export_retries_from_committed_cursor(tmp_path):
+    import ast
+    import io
+    import json
+
+    from scripts.export_live_player_review import LiveSource
+
+    first, second = ({**dict.fromkeys(staging.FIELDS), **match(n)} for n in (1, 2))
+    for row in (first, second):
+        row["source_ref"] = f"public.matches/{row['match_id']}"
+    calls = []
+
+    class Process:
+        def __init__(self, frames):
+            self.stdout = io.BytesIO(b"".join(json.dumps(f).encode() + b"\n" for f in frames))
+
+        def poll(self):
+            return 0
+
+        def wait(self, timeout=None):
+            return 0
+
+    def start(untrusted_payload):
+        request = ast.literal_eval(
+            untrusted_payload.splitlines()[0].split(b"=", 1)[1].decode().strip()
+        )
+        calls.append(request)
+        last = second["match_id"]
+        if len(calls) == 1:
+            return Process([{"upper": last}, {"rows": [first]}])
+        return Process([{"upper": last}, {"rows": [second]}, {"done": True}])
+
+    source = LiveSource(tmp_path, "12345", start)
+    state = staging.extract(tmp_path / "fixture.sqlite", source)
+    assert state["scanned"] == 2 and state["dataset"]
+    assert calls == [
+        {"pinned": False, "upper": None, "after": None},
+        {"pinned": True, "upper": second["match_id"], "after": first["match_id"]},
+    ]
+
+
+def test_exact_alias_with_two_reviewed_people_is_quarantined(tmp_path):
+    stage, registry, packet = stage_packet(tmp_path, [match(1), match(2)])
+    reviewed = tmp_path / "ambiguous.xlsx"
+    scoped = tmp_path / "alias.xlsx"
+    change_packet(
+        packet,
+        scoped,
+        {alias_row(packet, "Иванов И."): ("approve", "P0001", "Known person")},
+        sheet="Aliases0001",
+    )
+    # Both starts coincide and therefore the workbook includes both exceptions.
+    change_packet(scoped, reviewed, {4: ("split", "P0002", "Different person with same name")})
+    import_review(stage, registry, reviewed, reviewer="owner", recorded_at=RECORDED)
+    api = ReviewedMappings(registry)
+    assert len(api.alias_candidates("M", "Иванов И.")) == 2
+    assert api.resolve_match(
+        match(3, start_ts="2024-03-16T10:00:00"),
+        source="nbbet",
+        policy=ExactAliasPolicy("fixture approval"),
+    )[0]["reason"] == ("ambiguous_or_unapproved_alias")

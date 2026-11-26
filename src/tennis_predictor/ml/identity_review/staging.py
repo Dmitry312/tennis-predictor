@@ -2,7 +2,6 @@
 
 import json
 import os
-import re
 import sqlite3
 import unicodedata
 from contextlib import closing
@@ -16,26 +15,9 @@ from tennis_predictor.ml.canonical_layer.evidence import digest, encoded, finger
 from tennis_predictor.ml.canonical_layer.source import CatalogAdapter, read
 from tennis_predictor.ml.player_identity import IdentityError, normalize_name
 
-PAGE_SIZE = 512
-MAX_PAGES = 20_000
-MAX_SECONDS = 25 * 60
-VERSION = "player-review-v1"
-FIELDS = (
-    "match_id",
-    "gender",
-    "level",
-    "match_date",
-    "start_ts",
-    "tournament_name",
-    "player1",
-    "player2",
-    "nbbet_match_id",
-    "championat_match_id",
-    "nbbet_slug",
-    "status",
-    "duplicate_of",
-    "details_version",
-)
+from .pg_export import FIELDS, MAX_PAGES, MAX_SECONDS, PAGE_SIZE, PostgresSource, iso
+
+VERSION = "player-review-v2"
 # A deliberately lossy suggestion key. It never authenticates an alias.
 TRANSLIT = dict(
     zip(
@@ -103,14 +85,6 @@ def review_dir(path):
     return path
 
 
-def iso(value):
-    return (
-        value.isoformat()
-        if hasattr(value, "isoformat")
-        else (str(value) if isinstance(value, UUID) else value)
-    )
-
-
 def uuid_text(value):
     if not isinstance(value, str) or str(UUID(value)) != value:
         raise ValueError("Invalid canonical match ID")
@@ -142,62 +116,6 @@ class CatalogSource:
             if len(rows) == PAGE_SIZE:
                 break
         return rows
-
-
-def validate_plan(raw):
-    if not isinstance(raw, list) or len(raw) != 1:
-        raise ValueError("PostgreSQL extraction requires one bounded index plan")
-    root = raw[0]["Plan"]
-    scans = root.get("Plans", [])
-    if (
-        root.get("Node Type") != "Limit"
-        or len(scans) != 1
-        or root.get("Total Cost", 10_001) > 10_000
-    ):
-        raise ValueError("PostgreSQL extraction requires a bounded LIMIT")
-    scan = scans[0]
-    if (
-        scan.get("Node Type") not in ("Index Scan", "Index Only Scan")
-        or scan.get("Relation Name") != "matches"
-        or scan.get("Index Name") != "matches_pkey"
-        or scan.get("Plans")
-        or any("Filter" in key for key in root.keys() | scan.keys())
-    ):
-        raise ValueError("PostgreSQL extraction requires an unfiltered matches PK scan")
-
-
-class PostgresSource:
-    """One short read-only transaction per page, against a pinned frozen source."""
-
-    def __init__(self, connect, snapshot):
-        if not re.fullmatch(r"[a-zA-Z0-9._:-]{1,128}", snapshot):
-            raise ValueError("A frozen source snapshot identifier is required")
-        self.connect = connect
-        self.source_id = f"postgres:{snapshot}"
-
-    def page(self, after):
-        truncated = {"player1", "player2", "tournament_name", "nbbet_slug"}
-        columns = ", ".join(f"left(m.{k},513)" if k in truncated else f"m.{k}" for k in FIELDS)
-        where = " WHERE m.match_id > %s::uuid" if after else ""
-        query = f"SELECT {columns} FROM public.matches m{where} ORDER BY m.match_id LIMIT %s"
-        params = (after, PAGE_SIZE) if after else (PAGE_SIZE,)
-        with closing(self.connect()) as db:
-            db.set_session(readonly=True, isolation_level="REPEATABLE READ", autocommit=False)
-            with db, db.cursor() as cursor:
-                cursor.execute("SET LOCAL statement_timeout = '5s'")
-                cursor.execute("SET LOCAL lock_timeout = '500ms'")
-                cursor.execute("SET LOCAL idle_in_transaction_session_timeout = '10s'")
-                cursor.execute("EXPLAIN (FORMAT JSON) " + query, params)
-                validate_plan(cursor.fetchone()[0])
-                cursor.execute(query, params)
-                results = cursor.fetchmany(PAGE_SIZE + 1)
-        return [
-            {
-                **dict(zip(FIELDS, map(iso, row), strict=True)),
-                "source_ref": f"public.matches/{row[0]}",
-            }
-            for row in results
-        ]
 
 
 DDL = """

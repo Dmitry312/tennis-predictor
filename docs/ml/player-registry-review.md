@@ -12,8 +12,9 @@ uv run --locked --group review python scripts/prepare_player_review.py
 ```
 
 The default reads the repository's 20-match sample and writes
-`data/ml/identity-review/catalog/player-review.xlsx`. This workbook covers
-40 match-side observations and 40 candidate groups. It contains no approved
+`data/ml/identity-review/player-review-v2/catalog/player-review.xlsx`. This workbook covers
+40 match-side observations, 40 candidate groups and 40 alias rows.
+The 20 matches are a smoke test. It contains no approved
 mappings and gives no estimate of population coverage. The staging SQLite
 file preserves exact names, match IDs, dates, tournament, source match IDs
 and provenance. Other artifacts remain local under `data/`. Workbook creation
@@ -21,15 +22,18 @@ is atomic, and a repeated preparation preserves the original packet.
 
 Send the completed packet to the owner using an approved private channel.
 The coverage sheet gives dataset and parent revision fingerprints. The group
-sheet prioritizes severe conflicts, then other uncertain groups. All sides
-appear in the observation sheets. Singleton, conflict and sample sheets
-provide shortcuts. Large sheets rotate after 500,000 rows.
+sheet prioritizes severe conflicts, then other uncertain groups. Alias rows
+show one exact normalized alias per source and gender, with counts, dates
+and an example match. Observation sheets contain exceptional evidence only,
+including conflicting sides, suspicious overlap, transliteration groups or
+changed evidence. Singleton, conflict and sample sheets provide shortcuts. Large sheets rotate after 500,000 rows.
 
 ### Owner decisions
 
 Edit only `action`, `person_key` and `reason` in `Groups*` or
-`Observations*`. Filter rows in Excel as needed and preserve original order
-when saving. Decisions on observations override group decisions.
+`Aliases*`, or the exceptional `Observations*` rows. Filter rows in Excel
+and preserve their original order when saving. Exception decisions override
+alias decisions, which override group decisions.
 
 | Action | Usage |
 | --- | --- |
@@ -49,7 +53,7 @@ A designated reviewer applies the returned workbook explicitly:
 
 ```bash
 uv run --locked --group review python scripts/apply_player_review.py \
-  --directory data/ml/identity-review/catalog apply returned.xlsx \
+  --directory data/ml/identity-review/player-review-v2/catalog apply returned.xlsx \
   --reviewer owner --recorded-at '<actual ISO-8601 decision time with offset>'
 ```
 
@@ -72,8 +76,9 @@ homonym. Equal UTC starts across different matches are suspicious, and a
 same-day recurrence alone is allowed. Opposing observations within one match
 and conflicting gender context are flagged. One verified person cannot occupy
 both sides or cross conflicting gender contexts. Invalid names or unknown
-gender remain quarantined. Names, spelling hints, ranks and photos provide
-no automatic verified assignment.
+gender remain quarantined. Transliteration, spelling hints, ranks and photos provide no automatic verified
+assignment. Owner-reviewed groups and alias decisions can authorize their exact
+aliases. A match-specific exception alone cannot authorize a rule for future matches.
 
 Each internal UUID derives from an opaque creation occurrence and append-only
 review sequence. Renaming or adding an alias does not renumber an existing
@@ -84,52 +89,71 @@ IDs for invalidating both affected histories. Unseen match sides and mismatched
 evidence hashes return quarantine.
 
 Consumers use `ReviewedMappings.mapping(match_id, side, observation_sha256=...,
-revision=...)`. The evidence hash is
-`fingerprint(observation_evidence(source_match_row, side))`, with the same source
-reference as the extraction. A verified record contains its player ID,
-journal revision, token and actual decision time. `alias_candidates(gender, name)`
-returns possible **previously reviewed** IDs for future observation review,
-including multiple candidates; it cannot verify a new match-side mapping.
-`invalidations(revision)` streams affected match-side dates and IDs. This forms the
-interface for later canonical and Match Data Store integration, with the
-aggregation and canonical implementations kept unchanged in this branch.
+revision=...)` for a manual mapping and `ReviewedMappings.resolve_match(row,
+source="nbbet", policy=..., revision=...)` for daily ingestion. Pass both sides
+together and preserve the source reference. The evidence hash is
+`fingerprint(observation_evidence(source_match_row, side))`.
 
-## Future protected read-only extraction
+The policy stays inactive by default. After written owner approval of
+cross-match name stability, integration may explicitly pass
+`ExactAliasPolicy(owner_approval=<decision reference>)`. The rule accepts
+only a unique, exact normalized alias approved by a group or alias decision
+in the NBBet and gender scope. It quarantines new or ambiguous aliases,
+rejected or changed reviewed evidence, opposing sides, exact simultaneous
+starts with reviewed evidence and unknown source/gender. Same-day matches at
+different times remain possible. A result carries `rule_resolved` provenance
+and the pinned registry and alias evidence revisions. A manual match-side
+decision carries separate `manual_review` provenance. Neither the collector
+nor the Canonical Layer activates this policy in this branch.
 
-The SQL is implemented and tested with a stub of the read-only transport. No
-production query, deployment, database migration or full-history export was
-performed. The existing `matches` table holds source **match** IDs and no
-documented source player ID. The extraction uses that minimal projection;
-it makes no per-player queries and downloads no raw history, photos or S3 files.
+`alias_candidates` remains a lookup of previously reviewed exact names.
+`invalidations(revision)` streams affected dates and IDs, and consumers
+must pin a registry revision so later corrections cannot silently alter an
+earlier output. This is the integration boundary for PR #93. Canonical
+ingestion and Match Data Store can persist the resolution type and revision
+without changing the registry or recalculating historical features here.
 
-A future owner-approved button should configure a restricted read-only account
-and an immutable database snapshot or frozen copy. Pin the snapshot identifier
-and persistent local staging directory before dispatch. The job sets
-`IDENTITY_SOURCE=postgres`, `IDENTITY_FROZEN_SOURCE=yes`,
-`IDENTITY_SOURCE_SNAPSHOT` and the protected `IDENTITY_PG_DSN`, then invokes the
-same preparation command. Users need no typed parameters. A resumed run must
-use the same frozen source; a label alone cannot freeze a mutable primary.
-The transport checks the unfiltered `matches_pkey` plan before each page
-and filters Tour/Challenger and the existing slash doubles marker locally.
-Rows with missing names or uncertain gender remain review evidence.
+## One-button read-only export
+
+The new **Export player registry review** workflow is manual, with no typed
+inputs and no production dispatch in this change. It is restricted to `ML`
+and uses the existing `player-identity-audit` environment, SSH secret names,
+ED25519 host fingerprint, and server Python runtime under
+`/root/Tennis_pelmen_model`. The workflow should be registered where GitHub
+exposes manual workflows and the existing environment's review restrictions
+must authorize the selected `ML` run. No new server, frozen replica, DSN or
+credential is required. The server reads existing PostgreSQL settings locally.
+The runner streams the reviewed script over SSH and stages only the projected
+match identity fields. Source credentials stay on the server. The workflow
+makes no production writes and does not install anything on the server.
+
+The scan pins the highest visible UUID using the primary-key index and
+uses a bounded forward keyset scan up to that UUID. It reads short validated
+transactions instead of holding a single transaction over the whole history.
+Inserts below a passed cursor and concurrent updates or deletions can affect
+completeness or consistency. This is a live keyset scan, not a point-in-time
+snapshot. Recheck coverage before treating the extract as authoritative.
+The optional frozen-source CLI remains available separately.
 
 | Bound | Value |
 | --- | --- |
-| Query page | 512 rows, exclusive UUID keyset cursor, one short read-only transaction per page |
-| Statement / lock / idle timeout | 5 s / 500 ms / 10 s |
-| Delay between pages | 100 ms in the configured PostgreSQL CLI path |
-| Local invocation | 25-minute extraction window or 20,000 pages, whichever occurs first |
-| Staging checkpoint | Match UUID, row counters and page committed together; failed pages are replayable |
+| Query page | At most 512 rows, exclusive lower UUID and inclusive saved upper UUID |
+| DB statement / lock / idle timeout | 5 s / 500 ms / 10 s |
+| Remote pacing | 100 ms between pages, one DB connection per stream |
+| Internal window | 25 minutes or 20,000 pages per stream; up to four local extraction windows per dispatch |
+| Recovery | Upper UUID and SQLite cursor persisted on the runner; retry opens a new stream from the committed cursor |
 | Workbook import | 8 GiB expanded archive and 128 MiB shared strings safety limits |
 
-An incomplete run exits with a checkpoint and no workbook. The future protected
-runner resumes the same logical operation from durable staging within its
-approved total budget. Provision and measure disk space for the frozen source,
-SQLite evidence, disk sorts and workbook spill files during a separate pilot.
-At completion, validate scanned/filtered counts against the frozen source's
-approved inventory before asserting full coverage. Keep all review files out of
-release artifacts and deliver the workbook only to the owner. The production
-dispatch and its credentials remain a separate approval.
+A failed/incomplete run publishes no workbook. Checkpoints persist across
+reconnections within one dispatch. A fresh GitHub-hosted run starts a fresh
+scan because its runner disk is ephemeral. Completed runs publish a
+one-day **player-registry-review-<run-id>** artifact with
+`player-review.xlsx` and its minimal, content-checked `evidence.sqlite`
+companion needed for validation and import. No SSH files, raw history,
+credentials or private registry are uploaded. Before dispatch the owner
+must approve both the read and the intended Artifacts audience under the
+repository's sports-data policy. Retain the companion locally alongside
+the returned workbook for import.
 
 ## Questions for the owner
 

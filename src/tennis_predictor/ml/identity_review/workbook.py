@@ -48,6 +48,24 @@ OBS = (
     "previous_player_id",
     "previous_person_key",
 )
+ALIAS = (
+    "source",
+    "gender",
+    "normalized",
+    "group_id",
+    "example_name",
+    "observations",
+    "first_date",
+    "last_date",
+    "example_match",
+)
+# Only NBBet-only rows supply a usable source namespace. Dual-source rows lack
+# proof of which source supplied the display name.
+SOURCE_SCOPE = """CASE WHEN json_type(o.payload,'$.nbbet_match_id')='integer'
+    AND json_extract(o.payload,'$.nbbet_match_id')>0
+    AND json_extract(o.payload,'$.championat_match_id') IS NULL
+    THEN 'nbbet' ELSE 'unknown' END"""
+
 QUESTIONS = (
     "Is there an immutable source player ID? What is its documented field and namespace?",
     "Do names or initials remain stable across years, scripts, editions and provider corrections?",
@@ -105,6 +123,15 @@ def groups(db):
     """)
 
 
+def aliases(db):
+    yield from db.execute(f"""
+        SELECT {SOURCE_SCOPE} AS source, gender, normalized, min(group_id),
+               min(name), count(*), min(day), max(day), min(match_id)
+        FROM observations o WHERE gender IN ('M','F') AND normalized IS NOT NULL
+        GROUP BY source,gender,normalized ORDER BY source,gender,normalized
+    """)
+
+
 def observation_rows(db, *, parent_revision=None):
     """The registry connection attaches the read-only extraction as staging."""
     if parent_revision is None:
@@ -121,7 +148,11 @@ def observation_rows(db, *, parent_revision=None):
         f"""
         SELECT o.*, c.player_id AS previous_player_id, p.person_key AS previous_person_key
         FROM staging.observations o {joined}
-        LEFT JOIN people p ON p.player_id=c.player_id ORDER BY o.match_id,o.side
+        LEFT JOIN people p ON p.player_id=c.player_id
+        WHERE (c.row_hash IS NOT NULL AND c.row_hash!=o.row_hash)
+           OR EXISTS (SELECT 1 FROM staging.flags f WHERE f.group_id=o.group_id
+                      AND f.reason!='possible_homonyms')
+        ORDER BY o.match_id,o.side
     """,
         args,
     )
@@ -173,6 +204,7 @@ def partition(book, prefix, headers, rows: Iterable):
         sheet = make_sheet(book, f"{prefix}0001", headers)
     sheet.auto_filter.ref = f"A1:{last_column}{count + 1}"
     sheet.close()
+    return index + 1 if count else 0
 
 
 def metadata(registry):
@@ -215,12 +247,12 @@ def create_workbook(staging, registry, destination):
         append(coverage, ("stage", "owner review required"))
         instructions = make_sheet(book, "Instructions", ("instructions",))
         for line in (
-            "Edit only action, person_key and reason on Groups or Observations sheets.",
+            "Edit only action, person_key and reason on Groups, Aliases or Observations (exceptions).",
             "Approve a group with an explicit opaque person key such as P0001 and an evidence reason.",
             "Use merge with a shared key; split on individual observations with distinct keys.",
             "Reject quarantines. Leave unresolved decisions blank. Do not sort or remove rows.",
-            "Per-observation decisions override group decisions. Confirm flagged cases individually.",
-            "Singletons, Conflicts and Sample are reference sheets. Make decisions on Groups or Observations.",
+            "Exceptions override alias decisions, which override group decisions. Review only exceptions per match.",
+            "Singletons, Conflicts and Sample are reference sheets. Make decisions on Groups, Aliases or Observations.",
         ):
             append(instructions, (line,))
         question = make_sheet(book, "Owner questions", ("question",))
@@ -230,7 +262,13 @@ def create_workbook(staging, registry, destination):
             partition(
                 book, "Groups", GROUP + EDIT, (tuple(row) + ("", "", "") for row in groups(source))
             )
-            partition(
+            alias_count = partition(
+                book,
+                "Aliases",
+                ALIAS + EDIT,
+                (tuple(row) + ("", "", "") for row in aliases(source)),
+            )
+            exception_count = partition(
                 book,
                 "Observations",
                 OBS + EDIT,
@@ -254,6 +292,8 @@ def create_workbook(staging, registry, destination):
                     for row in islice((row for row in groups(source) if not row["flags"]), 25)
                 ),
             )
+        append(coverage, ("aliases", alias_count))
+        append(coverage, ("observation_exceptions", exception_count))
         with tempfile.NamedTemporaryFile(
             dir=destination.parent, suffix=".xlsx", delete=False
         ) as temp:
@@ -268,6 +308,8 @@ def create_workbook(staging, registry, destination):
         "parent": binding[2],
         "observations": observation_count,
         "groups": group_count,
+        "aliases": alias_count,
+        "exceptions": exception_count,
         "workbook": str(destination),
     }
 

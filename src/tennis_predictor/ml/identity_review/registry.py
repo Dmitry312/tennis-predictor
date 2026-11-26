@@ -3,18 +3,22 @@
 import json
 import re
 from contextlib import closing
+from dataclasses import dataclass
 from hashlib import sha256
 from itertools import zip_longest
 from pathlib import Path
 from uuid import uuid5
 
 from tennis_predictor.ml.canonical_layer.evidence import encoded, fingerprint, instant
-from tennis_predictor.ml.player_identity import NAMESPACE, normalize_name
+from tennis_predictor.ml.player_identity import NAMESPACE, IdentityError, normalize_name
 
-from .staging import connection, review_dir, uuid_text
+from .staging import connection, observation_evidence, review_dir, uuid_text
 from .workbook import (
+    ALIAS,
     GROUP,
     OBS,
+    SOURCE_SCOPE,
+    aliases,
     editable_rows,
     groups,
     metadata,
@@ -43,6 +47,14 @@ CREATE TABLE IF NOT EXISTS events (
     PRIMARY KEY(revision,match_id,side)
 );
 CREATE INDEX IF NOT EXISTS event_match ON events(match_id,side,revision DESC);
+CREATE INDEX IF NOT EXISTS event_alias ON events(gender,normalized,revision);
+CREATE INDEX IF NOT EXISTS event_player ON events(player_id,revision);
+CREATE TABLE IF NOT EXISTS alias_review (
+    revision INTEGER NOT NULL, match_id TEXT NOT NULL, side INTEGER NOT NULL,
+    source TEXT NOT NULL, authority TEXT NOT NULL,
+    PRIMARY KEY(revision,match_id,side),
+    FOREIGN KEY(revision,match_id,side) REFERENCES events(revision,match_id,side)
+);
 CREATE TABLE IF NOT EXISTS current (
     match_id TEXT NOT NULL, side INTEGER NOT NULL, revision INTEGER NOT NULL,
     gender TEXT, normalized TEXT, row_hash TEXT NOT NULL, day TEXT,
@@ -54,6 +66,10 @@ CREATE INDEX IF NOT EXISTS current_alias ON current(gender,normalized,player_id)
 TEMP_DDL = """
 CREATE TEMP TABLE group_actions (
     group_id TEXT PRIMARY KEY, action TEXT, person_key TEXT, reason TEXT
+);
+CREATE TEMP TABLE alias_actions (
+    source TEXT, gender TEXT, normalized TEXT, action TEXT, person_key TEXT, reason TEXT,
+    PRIMARY KEY(source,gender,normalized)
 );
 CREATE TEMP TABLE side_actions (
     match_id TEXT, side INTEGER, action TEXT, person_key TEXT, reason TEXT,
@@ -139,6 +155,15 @@ def collect_actions(book, stage, db, parent_revision):
             db.execute("INSERT INTO group_actions VALUES (?,?,?,?)", entry)
             packet.update(encoded(["group", *entry]))
     with (
+        closing(connection(stage)) as source,
+        closing(aliases(source)) as expected,
+        closing(editable_rows(book, "Aliases", ALIAS)) as actual,
+    ):
+        for facts, fields in decisions((tuple(row) for row in expected), actual, admit_split=False):
+            entry = (*facts[:3], *fields)
+            db.execute("INSERT INTO alias_actions VALUES (?,?,?,?,?,?)", entry)
+            packet.update(encoded(["alias", *entry]))
+    with (
         closing(observation_rows(db, parent_revision=parent_revision)) as expected,
         closing(editable_rows(book, "Observations", OBS)) as actual,
     ):
@@ -170,13 +195,18 @@ def person(db, row, person_key, revision):
 
 
 def write_events(db, revision):
-    sql = """
-        SELECT o.*, c.player_id AS previous_player_id, c.row_hash AS previous_row_hash, c.day AS previous_day,
-               coalesce(s.action,g.action) AS action,
-               coalesce(s.person_key,g.person_key) AS person_key,
-               coalesce(s.reason,g.reason) AS reason
+    sql = f"""
+        SELECT o.*, {SOURCE_SCOPE} AS source, c.player_id AS previous_player_id, c.row_hash AS previous_row_hash, c.day AS previous_day,
+               coalesce(s.action,a.action,g.action) AS action,
+               coalesce(s.person_key,a.person_key,g.person_key) AS person_key,
+               coalesce(s.reason,a.reason,g.reason) AS reason,
+               CASE WHEN s.action IS NOT NULL THEN 'exception'
+                    WHEN a.action IS NOT NULL THEN 'alias'
+                    WHEN g.action IS NOT NULL THEN 'group' ELSE 'exception' END AS authority
         FROM staging.observations AS o LEFT JOIN current c USING(match_id,side)
         LEFT JOIN group_actions g USING(group_id) LEFT JOIN side_actions s USING(match_id,side)
+        LEFT JOIN alias_actions a ON a.source=({SOURCE_SCOPE})
+          AND a.gender=o.gender AND a.normalized=o.normalized
         ORDER BY o.match_id,o.side
     """
     count = 0
@@ -211,6 +241,10 @@ def write_events(db, revision):
                 reason,
                 row["payload"],
             ),
+        )
+        db.execute(
+            "INSERT INTO alias_review VALUES (?,?,?,?,?)",
+            (revision, row["match_id"], row["side"], row["source"], row["authority"]),
         )
         count += 1
     if not count:
@@ -298,6 +332,38 @@ def import_review(stage, registry, workbook, *, reviewer, recorded_at):
         return result
 
 
+@dataclass(frozen=True)
+class ExactAliasPolicy:
+    """Activation is supplied by the caller only after the owner approves stability."""
+
+    owner_approval: str
+
+    def __post_init__(self):
+        if not isinstance(self.owner_approval, str) or not self.owner_approval.strip():
+            raise ValueError("Exact alias policy requires owner approval evidence")
+
+
+def quarantine(reason):
+    return {"status": "quarantine", "player_id": None, "reason": reason}
+
+
+def alias_rule(db, *, gender, normalized, revision):
+    return list(
+        db.execute(
+            """
+        SELECT e.player_id, max(e.revision) AS evidence_revision,
+               max(CASE WHEN a.authority IN ('alias','group') THEN 1 ELSE 0 END) AS approved
+        FROM events e JOIN alias_review a USING(revision,match_id,side)
+        WHERE a.source='nbbet' AND e.gender=? AND e.normalized=? AND e.revision<=?
+          AND e.revision=(SELECT max(last.revision) FROM events last
+                          WHERE last.match_id=e.match_id AND last.side=e.side AND last.revision<=?)
+        GROUP BY e.player_id
+    """,
+            (gender, normalized, revision, revision),
+        )
+    )
+
+
 class ReviewedMappings:
     """Stable boundary for later canonical ingestion and Match Data Store integration."""
 
@@ -328,8 +394,6 @@ class ReviewedMappings:
         }
 
     def alias_candidates(self, gender, name):
-        from tennis_predictor.ml.player_identity import IdentityError
-
         try:
             normalized = normalize_name(name)
         except IdentityError:
@@ -345,6 +409,96 @@ class ReviewedMappings:
                     (gender, normalized),
                 )
             )
+
+    def resolve_match(self, row, *, source, policy=None, revision=None):
+        """Resolve two sides against a single pinned registry snapshot."""
+        mid = uuid_text(row["match_id"])
+        if policy is not None and not isinstance(policy, ExactAliasPolicy):
+            raise TypeError("Expected an explicitly approved ExactAliasPolicy")
+        with closing(connection(self.path)) as db:
+            db.execute("BEGIN")
+            if revision is None:
+                pin = db.execute(
+                    "SELECT * FROM revisions ORDER BY revision DESC LIMIT 1"
+                ).fetchone()
+            else:
+                pin = db.execute("SELECT * FROM revisions WHERE revision=?", (revision,)).fetchone()
+                if pin is None:
+                    raise ValueError("Unknown registry revision")
+            if pin is None:
+                return (quarantine("empty_registry"), quarantine("empty_registry"))
+            results = tuple(
+                self.resolve_side(db, row, mid, side, source, policy, pin) for side in (1, 2)
+            )
+        if (
+            results[0]["player_id"] is not None
+            and results[0]["player_id"] == results[1]["player_id"]
+        ):
+            return (quarantine("opposing_sides"), quarantine("opposing_sides"))
+        return results
+
+    @staticmethod
+    def resolve_side(db, row, mid, side, source, policy, pin):
+        evidence = fingerprint(observation_evidence(row, side))
+        event = db.execute(
+            """
+            SELECT e.player_id,e.row_hash,e.reason,e.revision,r.recorded_at
+            FROM events e JOIN revisions r USING(revision)
+            WHERE e.match_id=? AND e.side=? AND e.revision<=?
+            ORDER BY e.revision DESC LIMIT 1
+        """,
+            (mid, side, pin["revision"]),
+        ).fetchone()
+        if event:
+            if event["row_hash"] != evidence or event["player_id"] is None:
+                return quarantine("rejected_or_changed_evidence")
+            return {**dict(event), "status": "verified", "provenance": "manual_review"}
+        if policy is None:
+            return quarantine("alias_policy_inactive")
+        if (
+            source != "nbbet"
+            or type(row.get("nbbet_match_id")) is not int
+            or row["nbbet_match_id"] <= 0
+            or row.get("championat_match_id") is not None
+            or row.get("gender") not in ("M", "F")
+        ):
+            return quarantine("source_or_gender_unproven")
+        try:
+            normalized = normalize_name(row.get(f"player{side}"))
+        except IdentityError:
+            return quarantine("invalid_name")
+        candidates = alias_rule(
+            db, gender=row["gender"], normalized=normalized, revision=pin["revision"]
+        )
+        if len(candidates) != 1 or not candidates[0]["player_id"] or not candidates[0]["approved"]:
+            return quarantine("ambiguous_or_unapproved_alias" if candidates else "new_alias")
+        candidate = candidates[0]
+        start = observation_evidence(row, side)["start_ts"]
+        if (
+            start
+            and db.execute(
+                """
+            SELECT 1 FROM events e
+            WHERE e.player_id=? AND e.match_id!=? AND e.revision<=?
+              AND julianday(json_extract(e.evidence,'$.start_ts'))=julianday(?)
+              AND e.revision=(SELECT max(last.revision) FROM events last
+                  WHERE last.match_id=e.match_id AND last.side=e.side AND last.revision<=?)
+            LIMIT 1
+        """,
+                (candidate["player_id"], mid, pin["revision"], start, pin["revision"]),
+            ).fetchone()
+        ):
+            return quarantine("same_start_distinct_matches")
+        return {
+            "status": "rule_resolved",
+            "provenance": "owner_approved_exact_alias",
+            "player_id": candidate["player_id"],
+            "registry_revision": pin["revision"],
+            "registry_token": pin["token"],
+            "alias_evidence_revision": candidate["evidence_revision"],
+            "owner_approval": policy.owner_approval,
+            "observation_sha256": evidence,
+        }
 
     def invalidations(self, revision):
         if type(revision) is not int or revision < 1:
