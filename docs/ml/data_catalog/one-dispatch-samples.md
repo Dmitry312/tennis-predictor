@@ -2,12 +2,29 @@
 
 ## Normal use
 
-After the implementation workflow is registered on GitHub's default branch and
-available on ML, run **automatic-match-samples.yml** on ML with the exact reviewed
-ML SHA. Initial batch size is 2, maximum 5. The optional selection_plan resolves
-multiple persisted plans; source_manifest supplies independently evidenced exact
-S3 history. Existing root-account reuse still needs the existing explicit opt-in
-when necessary; that is execution privilege control, not a content/rights approval.
+Select ML in GitHub's branch picker and click Run workflow for
+**automatic-match-samples.yml**. The standard operation needs no typed inputs.
+GitHub may still require choosing ML; the workflow does not select a branch
+automatically and refuses execution from any other branch.
+
+Versioned workflow configuration uses github.sha for both REVIEWED_SHA and
+SELECTED_SHA, explicitly checks out that exact SHA, sets BATCH_SIZE=5, and enables
+ALLOW_EXISTING_ROOT=true for this specific already-existing runtime. Progress
+discovery selects the persisted plan and first missing position automatically.
+The legacy name REVIEWED_SHA now expresses snapshot consistency, not an independent
+security review or evidence of human approval. Existing Environment approval and
+branch restrictions are retained without modification.
+
+Only two optional advanced fields remain. Leave selection_plan empty for automatic
+discovery; specify it only to disambiguate tracked plans. source_manifest is for
+nonstandard exact S3 history scenarios. No new required parameter, secret or
+acknowledgement replaces the removed SHA/batch/root prompts.
+
+The owner's 2026-11-26 standing permission to reuse the existing root runtime is
+scoped to this workflow's bounded read-only operation. It creates no account, sudo
+grant or new server privilege and changes no shared helper or fallback default.
+The existing project-path configuration, SSH secrets, fingerprint and execution
+guards remain. All risk controls, including manual merge, still apply.
 
 One dispatch computes continuation → reads PostgreSQL/S3 → validates → creates
 a dedicated samples/first20-gh-<run>-<attempt> branch and PR into ML. No repeated
@@ -58,8 +75,9 @@ optional selection_plan path above; it is a path selector, not a new approval.
 No offset, ID list, archive extraction or rights statement needs to be supplied.
 There is no unsafe override that publishes a conflicting index while #72 is pending.
 
-Each later invocation resumes the first missing contiguous plan prefix. Defaults:
-2, 4, 6, ... 18; with maximum-size batches, positions can progress 2, 7, 12, 17.
+Each later invocation resumes the first missing contiguous plan prefix. With the
+standard five-match batches, positions progress 2, 7, 12, 17; the final batch then
+contains only the three remaining matches.
 Each generated sample PR must be incorporated normally before the next dispatch;
 this is catalog consistency, not an extra per-batch legal/content attestation.
 The workflow never merges a predecessor automatically. Once all 20 selected IDs
@@ -97,7 +115,7 @@ for an operator who chooses protected staged review or encrypted fallback.
 
 The PostgreSQL 16 fix from PR #71 orders by the qualified UUID column, not its text
 output alias. Candidate discovery remains <=4×128 rows plus sentinels, no full
-scan/sort/post-filter plan, at most 20 selected, initial 2/max 5 acquired. Exact
+scan/sort/post-filter plan, at most 20 selected, standard 5/max 5 acquired. Exact
 UUID joins and a stable persisted plan prevent duplicate/resampled first batches.
 
 DB remains read-only repeatable-read with 5s statement timeout, 1s lock timeout,
@@ -127,7 +145,8 @@ prove implementation behavior, never production score semantics.
 
 GitHub requires workflow_dispatch registration on the default branch before
 choosing ML; this PR does not perform that registration merge. Existing runtime,
-source permissions, reviewed SHA and Environment protection must work as before.
+source permissions and Environment protection must work as before. The execution
+SHA is selected automatically from the dispatch snapshot, not entered by the operator.
 No production dispatch or permission change was performed by Codex.
 
 Repository/org policy must allow GITHUB_TOKEN to create PRs. No PAT or new App
@@ -142,3 +161,20 @@ creation can leave an already validated sample branch; existing names are refuse
 never force-pushed. Inspect that branch and complete its PR through normal recovery.
 No source records are uploaded until automatic checks pass, and no actual records
 were acquired or published while implementing this change.
+
+
+## Exact registration update for Issue #76
+
+The repository default branch is main. At implementation time main already held
+automatic-match-samples.yml with the old five-input form. Through normal review,
+update that same file on main to the exact version in this PR: retain only the
+optional selection_plan/source_manifest inputs, set both SHA variables and checkout
+ref to github.sha, and set workflow BATCH_SIZE='5'/ALLOW_EXISTING_ROOT='true'.
+Keep the ML-only guard, match-sample-review Environment and other controls identical.
+A stale main registration can otherwise keep showing obsolete required form fields.
+
+The helper code need not be copied to main to register the form: production execution
+is allowed only when ML is selected and its exact dispatch SHA is checked out. The
+matching workflow version must also be incorporated into ML before standard use.
+This task does not update main, merge a PR, change Environment settings or dispatch
+production. See ../foundation.md for the project-wide one-click operation convention.

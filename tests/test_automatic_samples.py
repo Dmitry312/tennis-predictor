@@ -175,3 +175,94 @@ def test_default_workflow_is_single_dispatch_without_new_secrets_or_artifacts():
     for step in job["steps"]:
         if "uses" in step: assert len(step["uses"].split("@")[1])==40
         if "run" in step: subprocess.run(["bash","-n"],input=step["run"],text=True,check=True)
+
+
+
+def standard_workflow():
+    import yaml
+    return yaml.load((ROOT/".github/workflows/automatic-match-samples.yml").read_text(),Loader=yaml.BaseLoader)
+
+
+def test_standard_dispatch_uses_versioned_defaults_and_explicit_sha_checkout():
+    wf=standard_workflow()
+    inputs=wf["on"]["workflow_dispatch"]["inputs"]
+    assert set(inputs)=={"selection_plan","source_manifest"}
+    assert all(value.get("required","false")=="false" and value.get("default")=="" for value in inputs.values())
+    expression="$"+"{{ github.sha }}"
+    assert wf["env"]["REVIEWED_SHA"]==wf["env"]["SELECTED_SHA"]==expression
+    assert wf["env"]["BATCH_SIZE"]=="5" and wf["env"]["ALLOW_EXISTING_ROOT"]=="true"
+    job=wf["jobs"]["samples-to-pr"]
+    step=next(v for v in job["steps"] if v.get("uses","").startswith("actions/checkout@"))
+    assert step["with"]["ref"]==expression and step["with"]["persist-credentials"]=="false"
+    assert job["environment"]=="match-sample-review"
+    # No per-step override can silently make selection and acquisition disagree.
+    assert all("BATCH_SIZE" not in step.get("env",{}) for step in job["steps"])
+
+
+@pytest.mark.parametrize("event,ref,expected",[
+    ("workflow_dispatch","refs/heads/ML",True),
+    ("workflow_dispatch","refs/heads/main",False),
+    ("workflow_dispatch","refs/heads/feature",False),
+    ("pull_request","refs/heads/ML",False),
+])
+def test_default_job_guard_rejects_wrong_branch_and_event(event,ref,expected):
+    import re
+    wf=standard_workflow()
+    condition=wf["jobs"]["samples-to-pr"]["if"]
+    expression=condition.removeprefix("$"+"{{").removesuffix("}}").strip()
+    clauses=expression.split("&&")
+    assert len(clauses)==2
+    values={"event_name":event,"ref":ref}
+    comparisons=[]
+    for clause in clauses:
+        match=re.fullmatch(r"\s*github\.(event_name|ref)\s*==\s*'([^']+)'\s*",clause)
+        assert match, "Guard must remain a conjunction of exact event/ref comparisons"
+        comparisons.append(values[match[1]]==match[2])
+    assert all(comparisons) is expected
+
+
+@pytest.mark.parametrize("offset,expected_count",[(2,5),(17,3)])
+def test_standard_configuration_drives_five_record_resume_and_bounded_tail(tmp_path,offset,expected_count):
+    wf=standard_workflow()
+    target=checkout(tmp_path/"checkout")
+    legacy,plan,_=batch(tmp_path/"legacy",automatic=False)
+    unpack_archive(legacy,tmp_path/"unpacked")
+    import_validated(tmp_path/"unpacked",target/"docs/ml/data_catalog")
+    plan_path=target/"docs/ml/data_catalog/acquisition-plans"/(e.sha(e.dumps(plan))+".json")
+    plan_path.parent.mkdir(); plan_path.write_bytes(e.dumps(plan))
+    if offset==17:
+        # Simulate earlier normal PR merges; the operator still supplies no offset.
+        for position in (2,7,12):
+            previous,_,_=batch(tmp_path/("previous"+str(position)),plan=plan,offset=position,size=5)
+            api=AutoAPI()
+            p.publish_automatic(api,previous,target,SHA,"gh-"+str(position)+"-1")
+            apply_tree(api,target)
+    # Both the first continuation and final partial batch are discovered from the index.
+    state=progress.preflight(AutoAPI(),target,SHA,batch_size=int(wf["env"]["BATCH_SIZE"]))
+    assert state["offset"]==offset and state["plan_path"]==str(plan_path.relative_to(target))
+    env={"OPERATION":"automatic","REVIEWED_SHA":SHA,"SELECTED_SHA":SHA,
+         "STAGE_TICKET":"gh-100-1","PROJECT_PATH":"/root/Tennis_pelmen_model",
+         "BATCH_SIZE":wf["env"]["BATCH_SIZE"],"ALLOW_EXISTING_ROOT":wf["env"]["ALLOW_EXISTING_ROOT"],
+         "BATCH_OFFSET":str(state["offset"])}
+    options=request.parameters(env)
+    assert options["batch_size"]==5 and options["allow_existing_root"] is True
+    data,_,report=batch(tmp_path/"source",plan=plan,offset=offset,size=options["batch_size"])
+    assert report["exported_count"]==expected_count
+    api=AutoAPI()
+    assert p.publish_automatic(api,data,target,SHA,"gh-100-1")=={"number":999}
+    files=next(data for _,path,data in api.calls if path=="git/trees")["tree"]
+    samples={item["path"].split("/")[4] for item in files if "/samples/match_" in item["path"]}
+    assert len(samples)==expected_count
+
+
+def test_optional_legacy_workflows_keep_their_interactive_defaults():
+    import yaml
+    for name in ("production-match-sample-acquisition.yml","protected-match-sample-fallback.yml"):
+        wf=yaml.load((ROOT/".github/workflows"/name).read_text(),Loader=yaml.BaseLoader)
+        inputs=wf["on"]["workflow_dispatch"]["inputs"]
+        assert inputs["reviewed_sha"]["required"]=="true"
+        assert inputs["allow_existing_root"]["default"]=="false"
+        assert inputs["batch_size"]["default"]=="2"
+    publication=yaml.load((ROOT/".github/workflows/publish-reviewed-match-samples.yml").read_text(),Loader=yaml.BaseLoader)
+    assert publication["on"]["workflow_dispatch"]["inputs"]["content_reviewed"]["default"]=="false"
+    assert publication["jobs"]["publish"]["environment"]=="match-sample-review"
