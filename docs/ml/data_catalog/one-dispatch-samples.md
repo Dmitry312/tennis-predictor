@@ -90,7 +90,8 @@ A genuine bounded-pool shortfall stays explicit rather than inventing more IDs.
 Reuses SERVER_HOST, SERVER_USER, SERVER_SSH_KEY, SERVER_HOST_FINGERPRINT and the
 already-accessible server Python/config. No new accounts, source grants, secrets,
 certificates, Docker service, server installation, sudo or production deployment.
-The existing SAMPLES_PROJECT_PATH/compatibility path and root opt-in remain.
+The existing SAMPLES_PROJECT_PATH/compatibility path remains; runtime reuse is
+configured by the standing permission above, with no per-run root prompt.
 The existing match-sample-review Environment is retained unchanged: its execution
 protection is not a new replacement for removed content/rights fields. This task
 does not inspect or modify administrative protection settings.
@@ -104,7 +105,7 @@ existing transport trap. GH_TOKEN/GITHUB_TOKEN are explicitly removed before
 SSH, never serialized into the reviewed payload or sent to the server. The
 publisher step receives no SSH credentials. This is process/step separation on
 the SAME trusted runner, not a claim of separate-VM isolation. Only the exact
-reviewed ML code and SHA-pinned actions execute; data is parsed as bounded JSON,
+selected ML code snapshot and SHA-pinned actions execute; data is parsed as bounded JSON,
 never executed as code. No untrusted PR checkout is used for source access.
 
 No cross-job plaintext artifacts, extra transfer secrets or ephemeral certificate
