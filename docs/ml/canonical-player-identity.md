@@ -92,3 +92,8 @@ Example (synthetic only):
 3. Add independently reviewed aliases using explicit events/provenance.
 4. Resolve observations; quarantine ambiguous/unmatched ones for separate review.
 5. Pin snapshot digest/revision in a future canonical manifest, never assume verified.
+
+The [owner review workflow](player-registry-review.md) adds disk-backed
+historical staging and explicitly reviewed match-side mappings. It reuses the
+normalization and opaque creation principles above while keeping candidate
+grouping separate from the existing small append-only registry contract.

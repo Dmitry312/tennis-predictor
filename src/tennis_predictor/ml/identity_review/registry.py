@@ -1,0 +1,363 @@
+"""Append-only owner decisions and an indexed match-side mapping interface."""
+
+import json
+import re
+from contextlib import closing
+from hashlib import sha256
+from itertools import zip_longest
+from pathlib import Path
+from uuid import uuid5
+
+from tennis_predictor.ml.canonical_layer.evidence import encoded, fingerprint, instant
+from tennis_predictor.ml.player_identity import NAMESPACE, normalize_name
+
+from .staging import connection, review_dir, uuid_text
+from .workbook import (
+    GROUP,
+    OBS,
+    editable_rows,
+    groups,
+    metadata,
+    observation_fields,
+    observation_rows,
+    show,
+    values,
+    workbook_reader,
+)
+
+REGISTRY_DDL = """
+CREATE TABLE IF NOT EXISTS revisions (
+    revision INTEGER PRIMARY KEY, token TEXT UNIQUE NOT NULL, packet TEXT UNIQUE NOT NULL,
+    parent TEXT NOT NULL, dataset TEXT NOT NULL, reviewer TEXT NOT NULL, recorded_at TEXT NOT NULL,
+    summary TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS people (
+    person_key TEXT PRIMARY KEY, player_id TEXT UNIQUE NOT NULL, gender TEXT NOT NULL,
+    created_revision INTEGER NOT NULL REFERENCES revisions
+);
+CREATE TABLE IF NOT EXISTS events (
+    revision INTEGER NOT NULL REFERENCES revisions, match_id TEXT NOT NULL, side INTEGER NOT NULL,
+    row_hash TEXT NOT NULL, gender TEXT, normalized TEXT, day TEXT, previous_day TEXT,
+    player_id TEXT REFERENCES people(player_id), previous_player_id TEXT REFERENCES people(player_id),
+    action TEXT NOT NULL, reason TEXT NOT NULL, evidence TEXT NOT NULL,
+    PRIMARY KEY(revision,match_id,side)
+);
+CREATE INDEX IF NOT EXISTS event_match ON events(match_id,side,revision DESC);
+CREATE TABLE IF NOT EXISTS current (
+    match_id TEXT NOT NULL, side INTEGER NOT NULL, revision INTEGER NOT NULL,
+    gender TEXT, normalized TEXT, row_hash TEXT NOT NULL, day TEXT,
+    player_id TEXT REFERENCES people(player_id), PRIMARY KEY(match_id,side),
+    FOREIGN KEY(revision,match_id,side) REFERENCES events(revision,match_id,side)
+);
+CREATE INDEX IF NOT EXISTS current_alias ON current(gender,normalized,player_id);
+"""
+TEMP_DDL = """
+CREATE TEMP TABLE group_actions (
+    group_id TEXT PRIMARY KEY, action TEXT, person_key TEXT, reason TEXT
+);
+CREATE TEMP TABLE side_actions (
+    match_id TEXT, side INTEGER, action TEXT, person_key TEXT, reason TEXT,
+    PRIMARY KEY(match_id,side)
+);
+"""
+
+
+def open_registry(path):
+    path = Path(path)
+    review_dir(path.parent)
+    path.touch(mode=0o600, exist_ok=True)
+    db = connection(path)
+    try:
+        db.executescript(REGISTRY_DDL)
+    except BaseException:
+        db.close()
+        raise
+    return db
+
+
+def open_review(registry, stage):
+    db = open_registry(registry)
+    try:
+        db.execute("ATTACH DATABASE ? AS staging", (Path(stage).resolve().as_uri() + "?mode=ro",))
+    except BaseException:
+        db.close()
+        raise
+    return db
+
+
+def binding(book):
+    if "Coverage" not in book:
+        raise ValueError("Review coverage sheet is missing")
+    rows = iter(book["Coverage"].iter_rows(max_row=4))
+    if values(next(rows, ())) != ("item", "value"):
+        raise ValueError("Invalid coverage header")
+    rows = [values(row) for row in rows]
+    if (
+        len(rows) != 3
+        or any(len(row) != 2 for row in rows)
+        or [row[0] for row in rows]
+        != [
+            "format",
+            "dataset",
+            "parent",
+        ]
+    ):
+        raise ValueError("Invalid workbook binding")
+    return tuple(row[1] for row in rows)
+
+
+def decisions(expected, actual, *, admit_split):
+    for facts, row in zip_longest(expected, actual):
+        if facts is None or row is None or tuple(map(show, facts)) != row[:-3]:
+            raise ValueError("Review rows missing, reordered or immutable cells changed")
+        action, person_key, reason = (value.strip() for value in row[-3:])
+        action = action.lower()
+        if not action:
+            if person_key or reason:
+                raise ValueError("Review comments need an explicit action")
+            continue
+        valid = {"approve", "merge", "reject"} | ({"split"} if admit_split else set())
+        if action not in valid or not reason or len(reason) > 1000:
+            raise ValueError("Invalid decision action or missing evidence reason")
+        if action == "reject":
+            if person_key:
+                raise ValueError("Rejected observations cannot have a person key")
+        elif not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", person_key):
+            raise ValueError("Use an explicit opaque person key")
+        yield facts, (action, person_key, reason)
+
+
+def collect_actions(book, stage, db, parent_revision):
+    packet = sha256()
+    with (
+        closing(connection(stage)) as source,
+        closing(groups(source)) as expected,
+        closing(editable_rows(book, "Groups", GROUP)) as actual,
+    ):
+        for facts, fields in decisions((tuple(row) for row in expected), actual, admit_split=False):
+            entry = (facts[0], *fields)
+            db.execute("INSERT INTO group_actions VALUES (?,?,?,?)", entry)
+            packet.update(encoded(["group", *entry]))
+    with (
+        closing(observation_rows(db, parent_revision=parent_revision)) as expected,
+        closing(editable_rows(book, "Observations", OBS)) as actual,
+    ):
+        for facts, fields in decisions(
+            (observation_fields(row) for row in expected), actual, admit_split=True
+        ):
+            entry = (facts[0], facts[1], *fields)
+            db.execute("INSERT INTO side_actions VALUES (?,?,?,?,?)", entry)
+            packet.update(encoded(["side", *entry]))
+    return packet.hexdigest()
+
+
+def person(db, row, person_key, revision):
+    if row["gender"] not in ("M", "F") or row["normalized"] is None:
+        raise ValueError("Invalid name or gender must remain quarantined")
+    found = db.execute("SELECT * FROM people WHERE person_key=?", (person_key,)).fetchone()
+    if found:
+        if found["gender"] != row["gender"]:
+            raise ValueError("A verified person cannot span conflicting gender contexts")
+        return found["player_id"]
+    # The opaque creation event depends on the approved occurrence and revision,
+    # not its display name, normalized spelling or owner-facing person key.
+    birth = uuid5(NAMESPACE, f"review-event/{revision}/{row['match_id']}/{row['side']}")
+    player_id = str(uuid5(NAMESPACE, str(birth)))
+    db.execute(
+        "INSERT INTO people VALUES (?,?,?,?)", (person_key, player_id, row["gender"], revision)
+    )
+    return player_id
+
+
+def write_events(db, revision):
+    sql = """
+        SELECT o.*, c.player_id AS previous_player_id, c.row_hash AS previous_row_hash, c.day AS previous_day,
+               coalesce(s.action,g.action) AS action,
+               coalesce(s.person_key,g.person_key) AS person_key,
+               coalesce(s.reason,g.reason) AS reason
+        FROM staging.observations AS o LEFT JOIN current c USING(match_id,side)
+        LEFT JOIN group_actions g USING(group_id) LEFT JOIN side_actions s USING(match_id,side)
+        ORDER BY o.match_id,o.side
+    """
+    count = 0
+    for row in db.execute(sql):
+        old = row["previous_player_id"]
+        action, reason = row["action"], row["reason"]
+        if action is None:
+            if old is None or row["previous_row_hash"] == row["row_hash"]:
+                continue
+            action, reason = "quarantine", "source evidence changed; renewed review required"
+        new = (
+            None
+            if action in ("reject", "quarantine")
+            else person(db, row, row["person_key"], revision)
+        )
+        if old is not None and new is not None and old != new and action not in ("split", "merge"):
+            raise ValueError("An existing assignment requires an explicit split or merge")
+        db.execute(
+            "INSERT INTO events VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                revision,
+                row["match_id"],
+                row["side"],
+                row["row_hash"],
+                row["gender"],
+                row["normalized"],
+                row["day"],
+                row["previous_day"],
+                new,
+                old,
+                action,
+                reason,
+                row["payload"],
+            ),
+        )
+        count += 1
+    if not count:
+        raise ValueError("Workbook has no decisions or changed evidence to publish")
+
+    db.execute(
+        """
+        INSERT INTO current
+        SELECT match_id,side,revision,gender,normalized,row_hash,day,player_id
+        FROM events WHERE revision=?
+        ON CONFLICT(match_id,side) DO UPDATE SET revision=excluded.revision, gender=excluded.gender,
+        normalized=excluded.normalized,row_hash=excluded.row_hash,day=excluded.day,player_id=excluded.player_id
+    """,
+        (revision,),
+    )
+    if db.execute(
+        """
+        SELECT 1 FROM events e JOIN current sibling
+          ON e.match_id=sibling.match_id AND e.side!=sibling.side AND e.player_id=sibling.player_id
+        WHERE e.revision=? LIMIT 1
+    """,
+        (revision,),
+    ).fetchone():
+        raise ValueError("One verified person cannot occupy both sides of a match")
+    count, earliest = db.execute(
+        """
+        SELECT count(*), min(CASE
+            WHEN day IS NULL THEN previous_day WHEN previous_day IS NULL THEN day
+            ELSE min(day, previous_day) END) FROM events
+        WHERE revision=? AND (player_id IS NOT NULL OR previous_player_id IS NOT NULL)
+    """,
+        (revision,),
+    ).fetchone()
+    return {"affected_mappings": count, "earliest_affected_date": earliest}
+
+
+def import_review(stage, registry, workbook, *, reviewer, recorded_at):
+    timestamp = instant(recorded_at)
+    if timestamp is None or not re.fullmatch(r"[A-Za-z0-9_.@-]{1,128}", reviewer):
+        raise ValueError("Review requires an actor and timezone-aware decision time")
+    recorded_at = timestamp.isoformat()
+    with closing(open_review(registry, stage)) as db, closing(workbook_reader(workbook)) as book:
+        db.executescript(TEMP_DDL)
+        db.execute("BEGIN IMMEDIATE")
+        current_binding, _ = metadata(db)
+        book_binding = binding(book)
+        if book_binding[:2] != current_binding[:2]:
+            raise ValueError("Workbook belongs to a different dataset or format")
+        parent = book_binding[2]
+        previous = db.execute("SELECT * FROM revisions WHERE token=?", (parent,)).fetchone()
+        if previous is None and parent != "root":
+            raise ValueError("Unknown parent revision")
+        parent_revision = previous["revision"] if previous else 0
+        decisions_sha = collect_actions(book, stage, db, parent_revision)
+        packet = fingerprint([book_binding, decisions_sha])
+        prior = db.execute("SELECT summary FROM revisions WHERE packet=?", (packet,)).fetchone()
+        if prior:
+            db.commit()
+            return json.loads(prior["summary"])
+        if parent != current_binding[2]:
+            raise ValueError("Stale workbook; regenerate against current registry")
+        if previous and instant(previous["recorded_at"]) > timestamp:
+            raise ValueError("Review time precedes parent")
+        revision = parent_revision + 1
+        token = fingerprint([packet, reviewer, recorded_at])
+        db.execute(
+            "INSERT INTO revisions VALUES (?,?,?,?,?,?,?,?)",
+            (
+                revision,
+                token,
+                packet,
+                parent,
+                book_binding[1],
+                reviewer,
+                recorded_at,
+                "{}",
+            ),
+        )
+        summary = write_events(db, revision)
+        result = {"revision": revision, "token": token, **summary}
+        db.execute(
+            "UPDATE revisions SET summary=? WHERE revision=?", (encoded(result).decode(), revision)
+        )
+        db.commit()
+        return result
+
+
+class ReviewedMappings:
+    """Stable boundary for later canonical ingestion and Match Data Store integration."""
+
+    def __init__(self, registry):
+        self.path = Path(registry).resolve().as_uri() + "?mode=ro"
+
+    def mapping(self, match_id, side, *, observation_sha256, revision=None):
+        uuid_text(match_id)
+        if type(side) is not int or side not in (1, 2):
+            raise ValueError("Invalid match side")
+        with closing(connection(self.path)) as db:
+            row = db.execute(
+                """
+                SELECT events.player_id, events.row_hash, events.reason,
+                       revisions.revision, revisions.token, revisions.recorded_at
+                FROM events JOIN revisions USING(revision)
+                WHERE match_id=? AND side=? AND (? IS NULL OR revision<=?)
+                ORDER BY revision DESC LIMIT 1
+            """,
+                (match_id, side, revision, revision),
+            ).fetchone()
+        if row and row["player_id"] is not None and row["row_hash"] == observation_sha256:
+            return {"status": "verified", **dict(row)}
+        return {
+            "status": "quarantine",
+            "player_id": None,
+            "reason": "missing_rejected_or_changed_evidence",
+        }
+
+    def alias_candidates(self, gender, name):
+        from tennis_predictor.ml.player_identity import IdentityError
+
+        try:
+            normalized = normalize_name(name)
+        except IdentityError:
+            return ()
+        with closing(connection(self.path)) as db:
+            return tuple(
+                row[0]
+                for row in db.execute(
+                    """
+                SELECT DISTINCT player_id FROM current
+                WHERE gender=? AND normalized=? AND player_id IS NOT NULL ORDER BY player_id
+            """,
+                    (gender, normalized),
+                )
+            )
+
+    def invalidations(self, revision):
+        if type(revision) is not int or revision < 1:
+            raise ValueError("Invalid review revision")
+        with closing(connection(self.path)) as db:
+            yield from map(
+                dict,
+                db.execute(
+                    """
+                SELECT match_id,side,day,previous_day,previous_player_id,player_id
+                FROM events WHERE revision=? AND (player_id IS NOT NULL OR previous_player_id IS NOT NULL)
+                ORDER BY match_id,side
+            """,
+                    (revision,),
+                ),
+            )
