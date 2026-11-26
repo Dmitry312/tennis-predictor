@@ -15,11 +15,12 @@ from infra.audit.sample_diagnostics import at
 
 def capture(source, environ):
     mode=environ["OPERATION"]
-    cap=LIMIT if mode=="release" else 4096
+    cap=LIMIT if mode in ("release","automatic") else 4096
     data=source.read(cap+1)
     e.need(len(data)<=cap,"ssh_output_limit")
-    if mode=="release":
-        e.need(e.sha(data)==environ["STAGE_DIGEST"],"review_digest_mismatch")
+    if mode in ("release","automatic"):
+        if mode=="release":
+            e.need(e.sha(data)==environ["STAGE_DIGEST"],"review_digest_mismatch")
         with Path(environ["SAMPLE_ARCHIVE"]).open("xb") as stream:
             os.chmod(environ["SAMPLE_ARCHIVE"],0o600)
             stream.write(data)

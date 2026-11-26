@@ -1,0 +1,10 @@
+{
+  "policy_id": "owner-public-sports-2026-11-26",
+  "owner_decision_date": "2026-11-26",
+  "scope": "ordinary_sports_records_in_public_tennis_predictor",
+  "retain_original_sports_values": true,
+  "per_batch_manual_attestations": false,
+  "content_eligibility_responsibility": "project_owner",
+  "third_party_redistribution_rights": "not_certified_by_repository_owner_permission",
+  "content_guard": "required_fail_closed"
+}

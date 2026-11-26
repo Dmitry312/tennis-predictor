@@ -11,7 +11,8 @@ import tempfile
 
 FILES = ("scripts/acquire_match_samples.py","scripts/export_match_samples.py",
          "infra/audit/full_match_export.py","scripts/review_staging.py","scripts/sample_delivery.py",
-         "infra/audit/sample_diagnostics.py")
+         "infra/audit/sample_diagnostics.py","scripts/sample_policy.py",
+         "docs/ml/data_catalog/publication-policy.json")
 BOOT_REASONS = frozenset(("payload_invalid","python_version","root_policy","project_invalid",
                          "project_unavailable","code_staging","imports_failed"))
 _phase="payload_invalid"
@@ -66,7 +67,7 @@ def execute(payload):
         from scripts.acquire_match_samples import run
         boot_event("ok")
         operation=request.get("operation","download")
-        if operation in ("stage","download"):
+        if operation in ("stage","download","automatic"):
             run(request,project,package["sha"])
         else:
             from scripts.review_staging import release,cleanup

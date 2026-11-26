@@ -148,7 +148,7 @@ def source_manifest(rows, ids, supplemental=None):
 
 
 def acquire(db, client, bucket, output, *, plan=None, supplemental=None,
-            offset=0, batch_size=2, pages=MAX_PAGES, after=None, secrets=(), limits=None):
+            offset=0, batch_size=2, pages=MAX_PAGES, after=None, secrets=(), limits=None, publication_policy=None):
     e.need(type(offset) is int and 0 <= offset < TARGET and
            type(batch_size) is int and 1 <= batch_size <= 5, "batch_invalid")
     limits = limits or e.Limits(matches=5,objects=100,total_bytes=128*1024*1024,seconds=240)
@@ -187,6 +187,14 @@ def acquire(db, client, bucket, output, *, plan=None, supplemental=None,
                  "selection_shortfall":plan["shortfall"]}
     with diag.at("content_validation"):
         packages = e.bundles(ids,pg,schema,inventory,results,selection,limits)
+        if publication_policy is not None:
+            from scripts.sample_policy import standing_policy
+            e.need(publication_policy==standing_policy(),"publication_policy_invalid")
+            for _,manifest in packages.values():
+                manifest["publication_policy"]=publication_policy
+                manifest["review"]={"owner_public_sports_approval":"2026-11-26",
+                    "content":"automatic_checks_required_before_publication",
+                    "third_party_rights":"not_certified_owner_responsibility"}
         summary = {"format":"first20-acquisition-report-v1", "target":TARGET,
                    "selected_count":len(plan["selected_ids"]), "selection_shortfall":plan["shortfall"],
                    "exported_count":len(ids), "batch_offset":offset, "next_offset":offset+len(ids),
@@ -196,6 +204,11 @@ def acquire(db, client, bucket, output, *, plan=None, supplemental=None,
                    "blockers":["unindexed_or_unknown_other_pg_links_not_exported",
                                "exact_sibling_candidates_do_not_discover_all_history",
                                "content_and_source_redistribution_rights_review_required"]}
+        if publication_policy is not None:
+            summary["publication_policy"]=publication_policy
+            summary["blockers"]=[item for item in summary["blockers"]
+                if item!="content_and_source_redistribution_rights_review_required"]
+            summary["source_eligibility"]="not_certified_project_owner_responsibility"
         for key, (data, _) in packages.items():
             summary["sources"][key] = {}
             for source in e.SOURCES:
@@ -282,15 +295,20 @@ def run(request, project, reviewed_sha):
                 aws_access_key_id=values["S3_ACCESS_KEY_ID"],aws_secret_access_key=values["S3_SECRET_ACCESS_KEY"],
                 config=Config(connect_timeout=2,read_timeout=3,retries={"total_max_attempts":1},
                               s3={"addressing_style":"path"}))
+        policy=None
+        if request.get("operation")=="automatic":
+            from scripts.sample_policy import standing_policy
+            policy=standing_policy()
         with e.bounded_process(240), tempfile.TemporaryDirectory(prefix="tennis-samples-") as temp:
             plan, report = acquire(db,client,values["S3_BUCKET"],Path(temp)/"catalog",
                 plan=request.get("plan"),supplemental=request.get("supplemental"),
                 offset=request["offset"],batch_size=request["batch_size"],pages=request["pages"],
                 after=request.get("after"),secrets=(values["POSTGRES_PASSWORD"],
-                    values["S3_ACCESS_KEY_ID"],values["S3_SECRET_ACCESS_KEY"]))
+                    values["S3_ACCESS_KEY_ID"],values["S3_SECRET_ACCESS_KEY"]),publication_policy=policy)
             with diag.at("archive"):
                 report["source_commit"] = reviewed_sha
                 report["runtime"] = runtime
+                if policy is not None: report["publication_policy"]=policy
                 e.inspect_content(report)
                 payload = make_archive(Path(temp)/"catalog",plan,report)
         if request.get("operation")=="stage":

@@ -10,6 +10,7 @@ on:
       - 'infra/audit/sample_diagnostics.py'
       - 'tests/test_sample_diagnostics_stdlib.py'
       - 'tests/test_sample_postgres16.py'
+      - 'tests/test_automatic_samples.py'
       - 'tests/test_sample_publication.py'
       - 'infra/audit/full_match_export.py'
       - 'tests/test_sample_acquisition.py'
@@ -65,5 +66,5 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install -e . pytest==8.3.5 PyYAML==6.0.2 cryptography==44.0.3
-      - run: python -m compileall -q scripts/acquire_match_samples.py scripts/build_sample_acquisition_payload.py scripts/sample_delivery.py scripts/review_staging.py scripts/publish_match_samples.py scripts/sample_workflow_request.py scripts/sample_workflow_capture.py infra/audit/sample_acquisition_bootstrap.py infra/audit/sample_diagnostics.py
-      - run: python -m pytest -q tests/test_sample_postgres16.py tests/test_sample_publication.py tests/test_sample_acquisition.py tests/test_export_match_samples.py tests/test_full_match_export.py tests/test_linked_record_review.py
+      - run: python -m compileall -q scripts/acquire_match_samples.py scripts/build_sample_acquisition_payload.py scripts/sample_delivery.py scripts/review_staging.py scripts/publish_match_samples.py scripts/sample_workflow_request.py scripts/sample_workflow_capture.py infra/audit/sample_acquisition_bootstrap.py infra/audit/sample_diagnostics.py scripts/sample_policy.py scripts/sample_progress.py
+      - run: python -m pytest -q tests/test_automatic_samples.py tests/test_sample_postgres16.py tests/test_sample_publication.py tests/test_sample_acquisition.py tests/test_export_match_samples.py tests/test_full_match_export.py tests/test_linked_record_review.py

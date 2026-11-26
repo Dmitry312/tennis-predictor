@@ -2,7 +2,7 @@
 from contextlib import contextmanager
 import sys
 
-STAGES = frozenset(("runner_preflight","runner_request","host_scan","host_verify",
+STAGES = frozenset(("runner_preflight","runner_request","catalog_progress","publication_validation","github_publication","host_scan","host_verify",
     "ssh_transport","remote_entry","remote_runtime","remote_bootstrap","remote_dependencies",
     "remote_config","dependency_psycopg2","dependency_boto3","dependency_pyarrow","postgres_connect","postgres_close","postgres_session","postgres_selection","postgres_rows",
     "source_manifest","s3_client","s3_read","s3_head","s3_get","parquet_decode",
@@ -20,7 +20,7 @@ REASONS = frozenset(("none","invalid_input","tool_missing","python_version","ssh
     "s3_head_failed","s3_get_failed","decode_failed","decode_limit","sensitive_content",
     "content_invalid","output_limit","stage_capacity","stage_expired","stage_changed",
     "stage_private","review_required","malformed_output","digest_mismatch","capture_failed",
-    "upstream_failed","unexpected"))
+    "upstream_failed","pending_sample_pr","first20_complete","ambiguous_plan","catalog_invalid","unexpected"))
 STATUSES = frozenset(("start","ok","error","skipped"))
 
 
@@ -41,6 +41,9 @@ def reason(stage, exc):
         args=getattr(exc,"args",())
         code=args[0] if len(args)==1 and type(args[0])is str else ""
         fixed={
+            "pending_sample_pr":"pending_sample_pr","first20_complete":"first20_complete",
+            "ambiguous_selection_plan":"ambiguous_plan","selection_plan_required":"catalog_invalid",
+            "noncontiguous_catalog":"catalog_invalid","baseline_catalog_missing":"catalog_invalid","publication_policy_invalid":"content_invalid",
             "readonly_required":"readonly_required","sql_timeout_required":"sql_timeout_required",
             "candidate_plan_invalid":"selection_plan","candidate_plan_expensive":"selection_plan",
             "candidate_plan_unbounded":"selection_plan","candidate_index_required":"selection_plan",

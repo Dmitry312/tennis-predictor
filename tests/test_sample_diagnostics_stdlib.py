@@ -52,13 +52,15 @@ class CleanRunner(unittest.TestCase):
                     "import importlib.util; assert all(importlib.util.find_spec(x) is None for x in ('boto3','psycopg2','pyarrow','tennis_predictor'))"],
                     capture_output=True,text=True,env=env)
                 self.assertEqual(probe.returncode,0,probe.stderr)
-                result=subprocess.run([str(self.python),"-I","-S",str(repository/"scripts/sample_workflow_request.py")],
-                    cwd=repository,env=env,capture_output=True,text=True)
-                self.assertEqual(result.returncode,0,result.stderr)
-                self.assertIn("raise SystemExit(main(",result.stdout)
-                compile(result.stdout,"reviewed-payload","exec")
-                self.assertNotIn("Traceback",result.stderr)
-                self.assertNotIn(env["SSH_KEY"],result.stdout+result.stderr)
+                for operation in (("stage","automatic") if repository==ROOT else ("stage",)):
+                    env["OPERATION"]=operation
+                    result=subprocess.run([str(self.python),"-I","-S",str(repository/"scripts/sample_workflow_request.py")],
+                        cwd=repository,env=env,capture_output=True,text=True)
+                    self.assertEqual(result.returncode,0,result.stderr)
+                    self.assertIn("raise SystemExit(main(",result.stdout)
+                    compile(result.stdout,"reviewed-payload","exec")
+                    self.assertNotIn("Traceback",result.stderr)
+                    self.assertNotIn(env["SSH_KEY"],result.stdout+result.stderr)
 
     def fake_commands(self,root,env):
         directory=root/"commands"; directory.mkdir()

@@ -14,7 +14,7 @@ from infra.audit.sample_diagnostics import at
 
 def parameters(environ):
     mode=environ["OPERATION"]
-    e.need(mode in ("stage","release","cleanup"),"operation_invalid")
+    e.need(mode in ("stage","release","cleanup","automatic"),"operation_invalid")
     source_sha=environ["REVIEWED_SHA"]
     e.need(source_sha==environ["SELECTED_SHA"],"reviewed_sha")
     identifier=ticket(environ["STAGE_TICKET"])
