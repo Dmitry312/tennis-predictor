@@ -62,3 +62,15 @@ def test_score_candidates_never_label_retirement_or_incomplete():
 
 def test_duplicate_json_rejected():
     with pytest.raises(ValueError): json.loads('{"a":1,"a":2}',object_pairs_hook=m.unique)
+
+
+def test_integrity_tamper_reported_without_touching_source(tmp_path):
+    import shutil
+    original=ROOT/"docs/ml/data_catalog"
+    shutil.copytree(original,tmp_path/"catalog")
+    index=m.read(tmp_path/"catalog/index.json")
+    file=tmp_path/"catalog"/index["real_examples"][0]["path"]/"matches.json"
+    value=m.read(file); value["rows"][0]["player1"]="Fabricated tamper"
+    file.write_text(json.dumps(value),encoding="utf-8")
+    report=m.audit(tmp_path/"catalog")
+    assert any(f["code"]=="file_hash_mismatch" for r in report["matches"] for f in r["findings"])
