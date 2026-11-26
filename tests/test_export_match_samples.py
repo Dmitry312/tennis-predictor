@@ -229,7 +229,7 @@ def test_http_guard_denies_redirect_and_retry():
         reader.before_send(SimpleNamespace(url="https://storage.yandexcloud.net/fixture.bucket/key"))
 
 
-@pytest.mark.parametrize("limit", ["object_bytes","total_bytes","file_rows","total_rows","uncompressed_bytes","output_bytes"])
+@pytest.mark.parametrize("limit", ["object_bytes","total_bytes","output_bytes"])
 def test_limits_fail_before_publication(tmp_path,limit):
     source = {"pbp":[{"key":"pbp/v3.parquet","current":True}]}
     with pytest.raises(m.ExportError):
@@ -443,3 +443,70 @@ def test_existing_index_secrets_are_not_copied(tmp_path):
     (tmp_path/"index.json").write_text(json.dumps({"real_examples":[],"token":"fixture-secret"}))
     with pytest.raises(m.ExportError): m.publish(tmp_path,packages())
     assert not list((tmp_path/"samples").glob("match_*"))
+
+
+@pytest.mark.parametrize("field,reason", [("file_rows","metadata_row_limit"),("total_rows","total_rows"),
+                                        ("uncompressed_bytes","uncompressed_bytes")])
+def test_decode_quarantine_preserves_provenance_and_continues(tmp_path,field,reason,capsys):
+    source={"pbp":[{"key":"pbp/big.parquet","current":True}],
+            "nbbet_stats":[{"key":"nbbet_stats/good.parquet","current":True}]}
+    client=S3({"pbp/big.parquet":parquet([SPORT,SPORT]),"nbbet_stats/good.parquet":parquet([SPORT])})
+    m.export(PG(),client,"fixture.bucket",[A],manifest(source),tmp_path,
+             replace(LIMITS,**{field:1}),{})
+    loaded=m.reuse(tmp_path)[A]
+    item=loaded["records"]["pbp.json"]["versions"][0]
+    assert reason in item["decode_reasons"]
+    assert item["coverage"]=="decode_limit" and not item["object_scan_complete"]
+    assert item["rows"]==[] and item["content_sha256"] and item["etag"]
+    assert len(client.calls)==4
+    assert loaded["manifest"]["coverage_complete"] is False
+    assert "big.parquet" not in capsys.readouterr().err
+
+
+def test_large_file_selects_only_safe_groups_without_more_requests(tmp_path):
+    buf=pa.BufferOutputStream()
+    pq.write_table(pa.Table.from_pylist([SPORT]*4),buf,row_group_size=2)
+    source={"pbp":[{"key":"pbp/large.parquet","current":True}]}
+    client=S3({"pbp/large.parquet":buf.getvalue().to_pybytes()})
+    m.export(PG(),client,"fixture.bucket",[A],manifest(source),tmp_path,replace(LIMITS,file_rows=2),{})
+    item=m.reuse(tmp_path)[A]["records"]["pbp.json"]["versions"][0]
+    assert item["coverage"]=="partial_row_groups"
+    assert item["row_groups_read"]==[0] and item["row_groups_skipped"]==1
+    assert len(item["rows"])==2 and not item["object_scan_complete"]
+    assert len(client.calls)==2
+
+
+@pytest.mark.parametrize("kind,reason", [("columns","metadata_columns"),("groups","row_groups"),
+                                        ("batch","batch_bytes")])
+def test_specific_decode_caps(monkeypatch,kind,reason,capsys):
+    class Fake:
+        def __enter__(self): return self
+        def __exit__(self,*a): pass
+        metadata=SimpleNamespace(num_rows=1,num_columns=129 if kind=="columns" else 1,
+                                 num_row_groups=129 if kind=="groups" else 1,
+                                 row_group=lambda i:SimpleNamespace(num_rows=1,total_byte_size=1))
+        schema_arrow=pa.schema([("canonical_match_id",pa.string())])
+        def iter_batches(self,**kwargs):
+            assert kwargs["row_groups"]==[0] and kwargs["use_threads"] is False
+            yield SimpleNamespace(nbytes=LIMITS.uncompressed_bytes+1)
+    monkeypatch.setattr(pq,"ParquetFile",lambda *a,**kw:Fake())
+    reader=m.S3Reader(S3({}),"fixture.bucket",{},m.Budget(LIMITS))
+    result=reader.decode(b"fake",{"match_ids":{A}})
+    assert result["decode_reasons"]==[reason]
+    assert result["rows_by_match"][A]==[]
+    assert result["row_groups_read"]==[]
+    assert "sample_diag:parquet_decode:skipped:"+reason in capsys.readouterr().err
+
+
+def test_shared_rows_never_refunded_after_batch_rejection(monkeypatch):
+    class Fake:
+        def __enter__(self): return self
+        def __exit__(self,*a): pass
+        metadata=SimpleNamespace(num_rows=1,num_columns=1,num_row_groups=1,
+                                 row_group=lambda i:SimpleNamespace(num_rows=1,total_byte_size=1))
+        schema_arrow=pa.schema([("canonical_match_id",pa.string())])
+        def iter_batches(self,**kw): yield SimpleNamespace(nbytes=LIMITS.uncompressed_bytes+1)
+    monkeypatch.setattr(pq,"ParquetFile",lambda *a,**kw:Fake())
+    budget=m.Budget(LIMITS)
+    result=m.S3Reader(S3({}),"fixture.bucket",{},budget).decode(b"",{"match_ids":{A}})
+    assert budget.rows==1 and not result["object_scan_complete"]

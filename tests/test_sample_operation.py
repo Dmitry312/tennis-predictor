@@ -250,3 +250,32 @@ def test_ssh_child_environment_and_process_group_timeout_cleanup(tmp_path,monkey
     assert "GH_TOKEN" not in seen["env"] and "GITHUB_TOKEN" not in seen["env"]
     assert seen["start_new_session"] is True and killed==[(Process.pid,op.signal.SIGTERM)]
     assert e.read_json(seen["env"]["OPERATION_PLAN_FILE"],1024*1024)==plan
+
+
+def test_whole_plan_with_decode_skips_still_one_validated_pr(tmp_path,monkeypatch):
+    from dataclasses import replace
+    from tests.test_automatic_samples import S3,objects
+    from scripts.sample_policy import standing_policy
+    target,plan,path=seeded(tmp_path,12)
+    before={p:p.read_bytes() for p in (target/"docs/ml/data_catalog/samples").rglob("*.json")}
+    calls=[]
+    def fetch(offset,count,frozen,destination):
+        calls.append((offset,count))
+        db=CandidatePG()
+        client=S3(objects(db.rows))
+        catalog=tmp_path/("decoded"+str(offset))
+        selected,report=a.acquire(db,client,"fixture.bucket",catalog,plan=frozen,
+            offset=offset,batch_size=count,publication_policy=standing_policy(),
+            limits=replace(e.Limits(matches=5,objects=100,total_bytes=128*1024*1024,seconds=240),
+                           uncompressed_bytes=1))
+        report["source_commit"]=SHA
+        assert any("decode_limit" in v["object_states"]
+                   for sources in report["sources"].values() for v in sources.values())
+        op.write_private(destination,a.make_archive(catalog,selected,report))
+    work=tmp_path/"operation"
+    op.collect(target,work,SHA,TICKET,offset=12,plan_path=path,fetch=fetch)
+    api=AutoAPI()
+    op.publish_operation(api,work,target,SHA,TICKET)
+    assert calls==[(12,5),(17,3)]
+    assert sum(p=="pulls" for _,p,_ in api.calls)==1
+    assert all(p.read_bytes()==data for p,data in before.items())

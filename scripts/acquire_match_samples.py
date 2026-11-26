@@ -219,7 +219,9 @@ def acquire(db, client, bucket, output, *, plan=None, supplemental=None,
                     "rows":sum(len(v["rows"]) for v in versions),
                     "truncated_rows":sum(v["rows_truncated"] for v in versions),
                     "object_states":[v["coverage"] for v in versions],
-                    "schema_variants":[v.get("schema",[]) for v in versions]}
+                    "schema_variants":[v.get("schema",[]) for v in versions],
+                    "decode_coverage":[{k:v[k] for k in ("coverage","decode_reasons","decode_metadata",
+                        "object_scan_complete","row_groups_read","row_groups_skipped") if k in v} for v in versions]}
         summary["read_usage"]={"s3_calls":budget.calls,"s3_bytes":budget.bytes,
                                "decoded_rows":budget.rows,"http_attempts":budget.http}
         # Inspect control files before publishing any batch.
