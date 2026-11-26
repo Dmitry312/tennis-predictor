@@ -37,7 +37,9 @@ def main():
     rows = ", ".join(f"{table}={count}" for table, count in report["rows"].items())
     snapshot = args.output / report["mode"] / "versions" / report["version"]
     print(f"{report['mode']}: {report['processed_matches']} matches ({counts})")
-    print(f"Result candidates: {report['candidates']}; confirmed: {report['confirmed_results']}")
+    print(
+        f"Match-local winners: {report['match_local_winners']}; gated targets: {report['confirmed_results']}"
+    )
     print(
         f"Missing checks: {report['missing_checks']}; conflicting checks: {report['conflicting_checks']}"
     )

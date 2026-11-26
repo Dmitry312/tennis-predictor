@@ -103,6 +103,9 @@ def write_shard(path, bundle, config):
         "candidates": sum(
             r.get("source_candidate_winner_side") is not None for r in tables["match_results"]
         ),
+        "match_local_winners": sum(
+            r.get("winner_side") is not None for r in tables["match_results"]
+        ),
         "targets": sum(r.get("target_p1_win") is not None for r in tables["match_results"]),
         "player_statuses": dict(Counter(r["resolution_status"] for r in tables["players"])),
         "quality": [
@@ -149,6 +152,7 @@ def quality_report(config, shards, outputs):
         "source_rows": dict(source_rows),
         "rows": {name: item["rows"] for name, item in outputs.items()},
         "candidates": sum(info["candidates"] for info in shards.values()),
+        "match_local_winners": sum(info["match_local_winners"] for info in shards.values()),
         "confirmed_results": sum(info["targets"] for info in shards.values()),
         "player_observations": dict(statuses),
         "quality": quality,

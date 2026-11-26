@@ -69,8 +69,32 @@ def test_all_real_examples_and_no_network(tmp_path, monkeypatch):
         "nbbet_raw": 5,
     }
     assert "pbp" in first["quality_by_source"]["pbp"]
-    assert first["candidates"] == 7
+    assert first["candidates"] == first["match_local_winners"] == 7
     assert first["confirmed_results"] == 0
+    expected_sides = {318197: 2, 730766: 2, 368682: 1, 750496: 2, 531103: 1, 207964: 1, 719212: 1}
+    match_ids = {r["match_id"]: r["source_match_id"] for r in table(folder, "matches")}
+    results = table(folder, "match_results")
+    assert len(results) == len(match_ids) == 20
+    for row in results:
+        expected = expected_sides.get(match_ids[row["match_id"]])
+        assert row["candidate_winner_side"] == row["winner_side"] == expected
+        assert row["target_p1_win"] is None and row["player_state_eligible"] is False
+        if expected is not None:
+            assert row["status"] == 3 and row["orientation"] == "same"
+        elif row["sets_raw"] is None:
+            assert row["exclusion_reason"] == "score_observation_missing"
+        else:
+            assert row["status"] == 9 and row["exclusion_reason"] == "non_completed_match_status"
+    # These four winning sides have no player-name payload in the details record.
+    missing_names = {730766, 750496, 531103, 719212}
+    for mid, sha in adapter.entries():
+        if match_ids[mid] in missing_names:
+            detail = next(
+                obs.rows[0]
+                for obs in adapter.load(mid, sha).observations
+                if obs.source == "nbbet_details" and obs.rows
+            )
+            assert not detail.get("players_json")
     assert first["player_observations"] == {"provisional": 40}
     for name, schema in SCHEMAS.items():
         assert pq.read_schema(folder / f"{name}.parquet").equals(schema, check_metadata=True)
@@ -147,6 +171,7 @@ def reviewed_bundle():
 
 def test_confirmed_result_survives_missing_pbp_and_bad_break_points():
     bundle, observations, config = reviewed_bundle()
+    config["reviews"][MATCH].pop("results")
     stats = observations["nbbet_stats"]
     scoped = [dict(row, break_points_won_p1=5, break_points_all_p1=1) for row in stats.rows]
     broken_break_points = replace(stats, rows=scoped)
@@ -190,17 +215,19 @@ def test_quarantine_and_provisional_identity():
     )
 
 
-def test_no_implicit_format_and_supported_deciders():
+def test_tally_infers_format_but_reviewed_format_still_constrains_result():
     bundle, _, config = reviewed_bundle()
     strict = MatchTransform(bundle, CONFIG).run()["match_results"][0]
     assert strict["source_candidate_winner_side"] == 1
-    assert strict["best_of"] is None
+    assert strict["winner_side"] == 1
+    assert strict["best_of"] == 3
+    assert strict["decider_rule"] is None
     assert strict["target_p1_win"] is None
     assert strict["sets"][0]["duration_raw"] is not None
     review = config["reviews"][MATCH]
     review["tournament"]["best_of"] = 5
     five = MatchTransform(bundle, config).run()["match_results"][0]
-    assert five["target_p1_win"] is None
+    assert five["winner_side"] is None and five["target_p1_win"] is None
     assert five["exclusion_reason"] == "incomplete_match"
 
 
@@ -306,6 +333,7 @@ def test_corrections_and_multiple_versions(tmp_path, monkeypatch):
     assert table(first_path, "match_results") == original
     corrected = [r for r in table(update_path, "match_results") if r["match_id"] == MATCH]
     assert {row["candidate_winner_side"] for row in corrected} == {1, 2}
+    assert {row["winner_side"] for row in corrected} == {1, 2}
     assert len({row["source_version"] for row in corrected}) == 2
     checks = [r for r in table(update_path, "data_quality") if r["match_id"] == MATCH]
     assert not any(
@@ -476,7 +504,8 @@ def test_decision_time_and_receipt_bound_reviewed_availability():
     review["decision_at"] = "2025-01-01T00:00:00Z"
     result = MatchTransform(bundle, config).run()["match_results"][0]
     assert result["target_p1_win"] is None
-    assert result["exclusion_reason"] == "conflicting_result_evidence"
+    assert result["winner_side"] == 1
+    assert result["exclusion_reason"] == "conflicting_result_availability"
 
     review.pop("decision_at")
     detail = observations["nbbet_details"]
@@ -491,3 +520,111 @@ def test_decision_time_and_receipt_bound_reviewed_availability():
     assert result["recorded_at"] is None and result["available_at"] is not None
     assert result["target_p1_win"] is None
     assert result["exclusion_reason"] == "availability_upper_bound_unknown"
+
+
+def score_observation(bundle, detail, **changes):
+    replacement = replace(detail, rows=[dict(detail.rows[0], **changes)])
+    return replace(
+        bundle,
+        observations=tuple(
+            replacement
+            if obs is detail
+            else replace(obs, rows=[], row_indices=())
+            if obs.source == "nbbet_raw"
+            else obs
+            for obs in bundle.observations
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("set_winners", "best_of"),
+    [
+        ((1, 1), 3),
+        ((2, 1, 1), 3),
+        ((1, 1, 1), 5),
+        ((1, 2, 1, 1), 5),
+        ((2, 2, 1, 1, 1), 5),
+    ],
+)
+@pytest.mark.parametrize("side", [1, 2])
+def test_legal_terminal_tallies_without_review_or_names(set_winners, best_of, side):
+    bundle, observations, _ = reviewed_bundle()
+    scores = [
+        {"score_team1": 6 if winner == side else 3, "score_team2": 3 if winner == side else 6}
+        for winner in set_winners
+    ]
+    changed = score_observation(
+        bundle, observations["nbbet_details"], sets_json=json.dumps(scores), players_json=None
+    )
+    result = MatchTransform(changed, CONFIG).run()["match_results"][0]
+    assert result["winner_side"] == side and result["best_of"] == best_of
+    assert result["target_p1_win"] is None and not result["player_state_eligible"]
+
+
+@pytest.mark.parametrize(
+    ("status", "scores"),
+    [
+        (9, [(6, 0), (6, 0)]),
+        (8, [(6, 0), (6, 0)]),
+        (3, [(6, 0), (5, 4)]),
+        (3, [(6, 0), (4, 6)]),
+        (3, [(6, 0), (6, 0), (4, 6)]),
+        (3, [(6, 6), (6, 0)]),
+        (3, [(6, 0), (6, 0), (10, 8)]),
+        (3, []),
+    ],
+)
+def test_no_winner_for_unfinished_illegal_or_missing_scores(status, scores):
+    bundle, observations, _ = reviewed_bundle()
+    changed = score_observation(
+        bundle,
+        observations["nbbet_details"],
+        status=status,
+        sets_json=json.dumps([{"score_team1": a, "score_team2": b} for a, b in scores]),
+    )
+    result = MatchTransform(changed, CONFIG).run()["match_results"][0]
+    assert result["winner_side"] is None
+    if not scores:
+        assert result["exclusion_reason"] == "score_observation_missing"
+
+
+def test_winner_rejects_wrong_nbbet_id_and_contradictory_review():
+    bundle, observations, config = reviewed_bundle()
+    detail = observations["nbbet_details"]
+    changed = score_observation(bundle, detail, nbbet_match_id=1)
+    result = MatchTransform(changed, CONFIG).run()["match_results"][0]
+    assert result["candidate_winner_side"] is None and result["winner_side"] is None
+    assert result["exclusion_reason"] == "conflicting_result_evidence"
+
+    review = config["reviews"][MATCH]["results"][MatchTransform.ref(detail, 0)]
+    review["independent_winner_side"] = 2
+    result = MatchTransform(bundle, config).run()["match_results"][0]
+    assert result["candidate_winner_side"] == 1 and result["winner_side"] is None
+    assert result["exclusion_reason"] == "independent_result_disagrees"
+
+
+def test_compatible_raw_disagreement_blocks_match_local_winner():
+    bundle, observations, _ = reviewed_bundle()
+    detail = observations["nbbet_details"]
+    conflicting = replace(
+        detail,
+        rows=[
+            dict(
+                detail.rows[0],
+                sets_json=json.dumps(
+                    [
+                        {"score_team1": 0, "score_team2": 6},
+                        {"score_team1": 0, "score_team2": 6},
+                    ]
+                ),
+            )
+        ],
+    )
+    bundle = replace(
+        bundle,
+        observations=tuple(conflicting if obs is detail else obs for obs in bundle.observations),
+    )
+    result = MatchTransform(bundle, CONFIG).run()["match_results"][0]
+    assert result["candidate_winner_side"] == 2 and result["winner_side"] is None
+    assert result["exclusion_reason"] == "conflicting_result_evidence"

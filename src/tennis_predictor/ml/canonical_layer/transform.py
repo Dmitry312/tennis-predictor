@@ -42,6 +42,24 @@ def score_contract(best_of, rule, ref):
     return ScoreContract(*SCORE_KEYS[:2], best_of, rule, ref, "catalog-sets-v1", *SCORE_KEYS[2:])
 
 
+def completed_set_winner(raw, reviewed_contract):
+    if reviewed_contract is not None:
+        return winner_from_sets(raw, reviewed_contract), reviewed_contract.best_of
+
+    # The NBBet contract allows either terminal tally. A reviewed edition,
+    # when supplied, still constrains the allowed format and deciding set.
+    first_error = None
+    for best_of in (3, 5):
+        for rule in ("tiebreak7", "tiebreak10"):
+            try:
+                contract = score_contract(best_of, rule, "pr-90-owner-nbbet-contract")
+                return winner_from_sets(raw, contract), best_of
+            except ContractError as exc:
+                if first_error is None:
+                    first_error = exc
+    raise first_error
+
+
 def orientation(meta, detail):
     players = unpack(detail.get("players_json"))
     try:
@@ -538,6 +556,30 @@ class MatchTransform:
             return "valid", "same_family_raw_consistent"
         return "unverified", "compatible_raw_snapshot_unproven"
 
+    def result_target_exclusion(self, obs, index, metadata_compatible):
+        available = self.availability(obs, index)
+        received = instant(obs.rows[index].get("fetched_at"), naive_utc=True)
+        if available is not None and (
+            (self.event_time is not None and available <= self.event_time)
+            or (self.recorded_at is not None and available > self.recorded_at)
+            or (received is not None and available > received)
+        ):
+            return "conflicting_result_availability"
+        if not metadata_compatible or self.meta.get("status") != 3:
+            return "compatible_finished_match_metadata_unproven"
+        if self.meta.get("duplicate_of") is not None or self.meta.get("level") not in (
+            "tour",
+            "challenger",
+        ):
+            return "duplicate_or_out_of_scope"
+        if self.player_status != "verified":
+            return "identity_unverified"
+        if available is None:
+            return "availability_unknown"
+        if self.recorded_at is None and received is None:
+            return "availability_upper_bound_unknown"
+        return None
+
     def results(self):
         version_rows = {}
         for obs in self.by_source["nbbet_details"]:
@@ -551,79 +593,74 @@ class MatchTransform:
                 ref = self.ref(obs, index)
                 status = counter(row.get("status"), 1)
                 scores = unpack(row.get("sets_json"))
-                order = orientation(self.meta, row)
+                name_order = orientation(self.meta, row)
+                source_match_id = counter(row.get("nbbet_match_id"), 1)
+                same_match = source_match_id is not None and source_match_id == counter(
+                    self.meta.get("nbbet_match_id"), 1
+                )
                 raw_status, raw_reason = self.corroboration(obs, row, scores, status)
                 self.quality(obs, "result_reconciliation", raw_status, raw_reason, ref)
-                contract = self.contract or score_contract(3, "tiebreak7", "research-hypothesis")
-                source_candidate = candidate = None
+                source_candidate = None
+                best_of = self.contract.best_of if self.contract else None
                 score_reason = None
-                if status == 3:
+                raw_sets = row.get("sets_json")
+                score_missing = raw_sets is None or scores == []
+                if status == 3 and not score_missing:
                     try:
-                        y = winner_from_sets(row.get("sets_json"), contract)
+                        y, best_of = completed_set_winner(raw_sets, self.contract)
                         source_candidate = 1 if y else 2
-                        if order is not None:
-                            candidate = (
-                                source_candidate if order == "same" else 3 - source_candidate
-                            )
                     except ContractError as exc:
                         score_reason = str(exc)
+                # Result sides are fixed by the NBBet match ID. Names still have
+                # their own evidence rules for aliases, rankings and statistics.
+                candidate = source_candidate if same_match else None
                 compatible_conflict = any(
-                    (r.get("sets_json"), r.get("status"), orientation(self.meta, r))
-                    != (row.get("sets_json"), row.get("status"), order)
+                    (unpack(r.get("sets_json")), r.get("status"), r.get("nbbet_match_id"))
+                    != (scores, row.get("status"), row.get("nbbet_match_id"))
                     for other in self.by_source["nbbet_details"]
                     if other.version != obs.version and self.compatible(obs, other)
                     for _, r in version_rows[other.version].values()
                 )
-                available = self.availability(obs, index)
-                received = instant(row.get("fetched_at"), naive_utc=True)
+                metadata_compatible = self.compatible(obs, self.metadata)
                 approved = self.review.get("results", {}).get(ref, {})
+                independent_side = approved.get("independent_winner_side")
                 if (
                     len(version_rows[obs.version]) != 1
                     or raw_status == "conflict"
                     or compatible_conflict
-                    or self.meta.get("nbbet_match_id") != row.get("nbbet_match_id")
-                    or (self.compatible(obs, self.metadata) and status != self.meta.get("status"))
                     or (
-                        available is not None
-                        and (
-                            (self.event_time is not None and available <= self.event_time)
-                            or (self.recorded_at is not None and available > self.recorded_at)
-                            or (received is not None and available > received)
-                        )
+                        source_match_id is not None
+                        and not same_match
+                        and self.meta.get("nbbet_match_id") is not None
                     )
+                    or (metadata_compatible and status != self.meta.get("status"))
                 ):
                     quality, reason = "conflict", "conflicting_result_evidence"
                 elif status != 3:
                     quality, reason = "unverified", "non_completed_match_status"
-                elif order is None:
-                    quality, reason = "unverified", "orientation_unproven"
+                elif score_missing:
+                    quality, reason = "missing", "score_observation_missing"
+                elif not same_match:
+                    quality, reason = "unverified", "nbbet_match_link_unproven"
                 elif score_reason:
-                    quality, reason = ("conflict" if self.contract else "unverified"), score_reason
-                elif self.contract is None:
-                    quality, reason = "unverified", "format_unproven"
-                elif not self.compatible(obs, self.metadata) or self.meta.get("status") != 3:
-                    quality, reason = "unverified", "compatible_finished_match_metadata_unproven"
-                elif self.meta.get("duplicate_of") is not None or self.meta.get("level") not in (
-                    "tour",
-                    "challenger",
+                    quality, reason = "conflict", score_reason
+                elif (
+                    approved.get("evidence_ref")
+                    and independent_side in (1, 2)
+                    and independent_side != candidate
                 ):
-                    quality, reason = "unverified", "duplicate_or_out_of_scope"
-                elif self.player_status != "verified":
-                    quality, reason = "unverified", "identity_unverified"
-                elif not approved.get("evidence_ref") or approved.get(
-                    "independent_winner_side"
-                ) not in (1, 2):
-                    quality, reason = "unverified", "independent_result_unproven"
-                elif approved["independent_winner_side"] != candidate:
                     quality, reason = "conflict", "independent_result_disagrees"
-                elif available is None:
-                    quality, reason = "unverified", "availability_unknown"
-                elif self.recorded_at is None and received is None:
-                    quality, reason = "unverified", "availability_upper_bound_unknown"
                 else:
                     quality, reason = "valid", "confirmed_completed_result"
                 self.quality(obs, "result", quality, reason, ref)
-                state_eligible = quality == "valid" and self.feature_time("result", obs, index)
+                winner = candidate if quality == "valid" else None
+
+                exclusion = (
+                    reason
+                    if winner is None
+                    else self.result_target_exclusion(obs, index, metadata_compatible)
+                )
+                state_eligible = exclusion is None and self.feature_time("result", obs, index)
                 self.quality(
                     obs,
                     "player_state",
@@ -635,7 +672,7 @@ class MatchTransform:
                     eligible=state_eligible,
                 )
                 model_target = (
-                    quality == "valid"
+                    exclusion is None
                     and self.config["mode"] == "strict_as_of"
                     and self.identity_known_at_cutoff()
                     and self.selected_at_cutoff(obs)
@@ -673,21 +710,23 @@ class MatchTransform:
                     status=status,
                     sets=sets,
                     sets_raw=row.get("sets_json"),
-                    orientation=order,
-                    best_of=self.contract.best_of if self.contract else None,
+                    orientation="same" if same_match else None,
+                    best_of=best_of,
                     decider_rule=self.contract.decider if self.contract else None,
-                    candidate_rule=("reviewed_edition" if self.contract else "hypothesis_bo3_tb7")
+                    candidate_rule=(
+                        "reviewed_edition" if self.contract else "nbbet_completed_set_tally"
+                    )
                     if source_candidate is not None
                     else None,
                     source_candidate_winner_side=source_candidate,
                     candidate_winner_side=candidate,
-                    winner_side=candidate if quality == "valid" else None,
-                    target_p1_win=int(candidate == 1) if quality == "valid" else None,
-                    exclusion_reason=None if quality == "valid" else reason,
+                    winner_side=winner,
+                    target_p1_win=int(winner == 1) if exclusion is None else None,
+                    exclusion_reason=exclusion,
                     player_state_eligible=state_eligible,
                 )
-                self.details_aliases(obs, index, row, order)
-                self.rankings(obs, index, row, order)
+                self.details_aliases(obs, index, row, name_order)
+                self.rankings(obs, index, row, name_order)
         if not has_details:
             self.emit(
                 "match_results",

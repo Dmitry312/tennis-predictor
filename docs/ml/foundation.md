@@ -11,6 +11,15 @@ statistics, PBP, context and timing checks during transformation. It produces
 11 typed local Parquet tables and a quality report. Further quality gates belong
 in the ML component that consumes the corresponding data.
 
+For a completed NBBet match (status 3), legal set tallies of 2:0 or 2:1
+establish a BO3 winner, and 3:0, 3:1 or 3:2 establish a BO5 winner.
+For the same NBBet match ID, score sides are the corresponding
+`matches.player1` and `matches.player2`. This is the verified source
+contract from the [owner's clarification in PR #90](https://github.com/Dmitry312/tennis-predictor/pull/90#issuecomment-7195523871).
+Match-local winners, cross-match identity, as-of availability and
+training eligibility have separate gates. Escalate new domain ambiguities
+to the owner.
+
 ## Temporal and storage contracts
 Separate event time, available_at, ingestion time and prediction cutoff. Strict mode requires verified availability; historical replay uses explicitly documented conservative assumptions and must not be presented as strict. Unknown ranking provenance is excluded from strict features. Immutable manifests pin source object versions or content hashes; checkpoint and replay on historical corrections. Store derived Parquet under ml/ with separate identity, aggregation, state, feature, dataset and model versions. Keep odds separate and join only at backtest time using verified observation timing.
 
