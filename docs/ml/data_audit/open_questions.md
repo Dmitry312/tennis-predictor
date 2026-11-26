@@ -1,0 +1,9 @@
+# Missing evidence and next steps
+
+UNKNOWN: stable player IDs, homonym/alias resolution across years (all40 PG names distinct); ranking publication/effective dates; detailed BO3/BO5 and decider rules by edition; pressure flag timing; complete PBP terminal rallies; TB score/server loss; exact first/second serve opportunity definition; venue/weather timestamps; duration handling for interruptions; source bookmaker/price timestamps; unexamined historical partitions and later correction versions.
+
+CONFLICT: all eight PBP/stat service-point totals differ; completeness flags cannot explain missing terminal events; PG latest details_version does not guarantee selected sibling row carries latest columns; old synthetic dictionary's numeric score assumption differs from observed descriptive keys; old 'BP always empty' comment contradicted by 15 actual stat scopes. No source/canonical behavior changed to resolve these.
+
+Next phase, after contract review: agree status/result/format policy; curate repeated-player and homonym evidence offline; define tournament edition mapping and rule evidence; design time/version-aware adapters and strict Dataset Builder gates. First baseline may use outcome-based Elo only when identities/results/availability are established. Add statistics after count semantics and coverage gates; PBP features after terminal-history validation. New evidence acquisition is outside this PR and must be separately authorized; no production calls were made.
+
+Do not block this audit on unanswerable questions. Evidence needed is concrete: immutable source player link/ID shared across matches; original terminal game score history; independent result reference; tournament-edition rule publication; timestamped pre-event ranking/odds/context snapshots; versions of corrected statistics. Current samples cannot supply these proofs.
