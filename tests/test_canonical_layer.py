@@ -70,7 +70,7 @@ def test_all_real_examples_and_no_network(tmp_path, monkeypatch):
     }
     assert "pbp" in first["quality_by_source"]["pbp"]
     assert first["candidates"] == first["match_local_winners"] == 7
-    assert first["confirmed_results"] == 0
+    assert first["confirmed_results"] == 7 and first["eligible_targets"] == 0
     expected_sides = {318197: 2, 730766: 2, 368682: 1, 750496: 2, 531103: 1, 207964: 1, 719212: 1}
     match_ids = {r["match_id"]: r["source_match_id"] for r in table(folder, "matches")}
     results = table(folder, "match_results")
@@ -78,7 +78,8 @@ def test_all_real_examples_and_no_network(tmp_path, monkeypatch):
     for row in results:
         expected = expected_sides.get(match_ids[row["match_id"]])
         assert row["candidate_winner_side"] == row["winner_side"] == expected
-        assert row["target_p1_win"] is None and row["player_state_eligible"] is False
+        assert row["target_p1_win"] == (int(expected == 1) if expected else None)
+        assert row["target_eligible"] is False and row["player_state_eligible"] is False
         if expected is not None:
             assert row["status"] == 3 and row["orientation"] == "same"
         elif row["sets_raw"] is None:
@@ -207,7 +208,8 @@ def test_quarantine_and_provisional_identity():
     assert all(row["resolution_status"] == "quarantine" for row in data["players"])
     assert data["matches"][0]["player1_id"] is None
     assert data["matches"][0]["player2_id"] is None
-    assert data["match_results"][0].get("target_p1_win") is None
+    assert data["match_results"][0]["target_p1_win"] == 1
+    assert data["match_results"][0]["target_eligible"] is False
     normal = MatchTransform(bundle, CONFIG).run()
     assert all(
         r["resolution_status"] == "provisional" and r["recorded_at"] is None
@@ -222,7 +224,7 @@ def test_tally_infers_format_but_reviewed_format_still_constrains_result():
     assert strict["winner_side"] == 1
     assert strict["best_of"] == 3
     assert strict["decider_rule"] is None
-    assert strict["target_p1_win"] is None
+    assert strict["target_p1_win"] == 1 and not strict["target_eligible"]
     assert strict["sets"][0]["duration_raw"] is not None
     review = config["reviews"][MATCH]
     review["tournament"]["best_of"] = 5
@@ -241,7 +243,13 @@ def test_temporal_modes_and_forbidden_inputs():
     assert temporal_gate("result", **strict, available_at=recent, event_date=day)[0]
     assert not temporal_gate("result", **strict, event_date=day)[0]
     assert temporal_gate("result", **replay, event_date=day)[0]
-    assert not temporal_gate("result", **replay, event_date=day, available_at=future)[0]
+    assert temporal_gate("result", **replay, event_date=day, available_at=future) == (
+        True,
+        "assumed_after_match_date",
+    )
+    assert temporal_gate(
+        "result", mode=replay["mode"], cutoff=instant("2020-01-02T00:00:00Z"), event_date=day
+    )[0]
     assert not temporal_gate("result", mode=replay["mode"], cutoff=recent, event_date=day)[0]
     assert not temporal_gate("ranking", **replay, available_at=recent)[0]
     for kind in ("odds", "recommendations"):
@@ -503,7 +511,7 @@ def test_decision_time_and_receipt_bound_reviewed_availability():
     review = config["reviews"][MATCH]
     review["decision_at"] = "2025-01-01T00:00:00Z"
     result = MatchTransform(bundle, config).run()["match_results"][0]
-    assert result["target_p1_win"] is None
+    assert result["target_p1_win"] == 1 and not result["target_eligible"]
     assert result["winner_side"] == 1
     assert result["exclusion_reason"] == "conflicting_result_availability"
 
@@ -518,7 +526,7 @@ def test_decision_time_and_receipt_bound_reviewed_availability():
     )
     result = MatchTransform(bundle, config).run()["match_results"][0]
     assert result["recorded_at"] is None and result["available_at"] is not None
-    assert result["target_p1_win"] is None
+    assert result["target_p1_win"] == 1 and not result["target_eligible"]
     assert result["exclusion_reason"] == "availability_upper_bound_unknown"
 
 
@@ -559,7 +567,7 @@ def test_legal_terminal_tallies_without_review_or_names(set_winners, best_of, si
     )
     result = MatchTransform(changed, CONFIG).run()["match_results"][0]
     assert result["winner_side"] == side and result["best_of"] == best_of
-    assert result["target_p1_win"] is None and not result["player_state_eligible"]
+    assert result["target_p1_win"] == int(side == 1) and not result["player_state_eligible"]
 
 
 @pytest.mark.parametrize(
