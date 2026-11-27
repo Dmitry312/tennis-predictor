@@ -1,0 +1,8 @@
+{
+  "status": "not_executed",
+  "production_scan_complete": false,
+  "measured_coverage": null,
+  "measured_resources": null,
+  "reason": "workspace_unavailable_and_no_SSH_or_workflow_dispatch_tool",
+  "production_writes": false
+}
