@@ -33,10 +33,6 @@ def main():
     if start is None or start > end:
         return
     while True:
-        # Leave the morning collection/report window free.
-        if 8 <= datetime.now(TZ).hour < 12:
-            time.sleep(300)
-            continue
         with open(args.lock, "a") as lock:
             try:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
