@@ -244,4 +244,20 @@ class PostgreSQLSnapshot(unittest.TestCase):
                 state.db.close()
         finally: conn.close()
 
+
+
+class OlderPartition(unittest.TestCase):
+    def test_pre2016_files_do_not_invalidate_requested_scope(self):
+        class Client:
+            def list_objects_v2(self,**kwargs):
+                return {"Contents":[{"Key":"nbbet_stats/gender=F/level=tour/year=2015/part-a.parquet","ETag":"fixture","Size":100}]}
+        class Guard:
+            def check(self,**kw): pass
+        with tempfile.TemporaryDirectory() as temp:
+            state=c.Store(Path(temp)/"state.sqlite")
+            r.inventory(state,Client(),"fixture",["nbbet_stats"],Guard())
+            state.inventory_finish(["nbbet_stats"])
+            self.assertEqual(state.db.execute("SELECT COUNT(*) FROM objects").fetchone()[0],0)
+            state.db.close()
+
 if __name__=="__main__": unittest.main()

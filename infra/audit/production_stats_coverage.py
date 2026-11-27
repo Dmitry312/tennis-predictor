@@ -169,14 +169,24 @@ def s3client(s,counters,guard):
         aws_access_key_id=s.s3_access_key_id,aws_secret_access_key=s.s3_secret_access_key,
         config=Config(connect_timeout=3,read_timeout=10,retries={"total_max_attempts":1},
                       max_pool_connections=1,s3={"addressing_style":"path"}))
+    sent=[0]
     def allow(model,params,**kw):
+        sent[0]=0
         guard.check()
         if model.name not in ("ListObjectsV2","GetObject") or params.get("Bucket")!=s.s3_bucket:
             raise Stop("runtime_policy_unverified")
         if model.name=="GetObject" and (not core.partition(params.get("Key","")) or not params.get("IfMatch")):
             raise Stop("runtime_policy_unverified")
         counters[model.name]=counters.get(model.name,0)+1
+    def before_send(request,**kw):
+        from urllib.parse import urlsplit
+        u=urlsplit(request.url)
+        if u.scheme!="https" or u.hostname!="storage.yandexcloud.net" or u.port not in (None,443) or u.username or u.password:
+            raise Stop("runtime_policy_unverified")
+        if sent[0]: raise Stop("runtime_policy_unverified")
+        sent[0]+=1; counters["http_attempts"]=counters.get("http_attempts",0)+1
     c.meta.events.register("before-parameter-build.s3",allow)
+    c.meta.events.register("before-send.s3",before_send)
     return c
 
 def inventory(store,c,bucket,kinds,guard):
@@ -194,6 +204,8 @@ def inventory(store,c,bucket,kinds,guard):
                         key=obj["Key"]
                         if not key.endswith(".parquet"): continue
                         if not core.partition(key):
+                            layout=core.KEY.fullmatch(key)
+                            if layout and int(layout[4])<2016: continue
                             bad+=1; continue
                         store.inventory_add(key,obj["ETag"],obj["Size"])
                     store.db.commit()
@@ -305,7 +317,12 @@ def main():
         if store is not None:
             resources=guard.report() if guard else {}
             resources.update(counters)
-            store.set("resources",resources)
+            sessions=store.get("resource_sessions",[])+[resources]
+            store.set("resource_sessions",sessions)
+            store.set("resources",{"sessions":sessions,"cumulative_elapsed_seconds":sum(x.get("elapsed_seconds",0) for x in sessions),
+                "cumulative_cpu_seconds":sum(x.get("cpu_seconds",0) for x in sessions),
+                "cumulative_bytes":sum(x.get("bytes",0) for x in sessions),
+                "max_rss_bytes":max((x.get("max_rss_bytes",0) for x in sessions),default=0)})
             store.set("stop_reason",code)
             store.db.commit()
             try:
