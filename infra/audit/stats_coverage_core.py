@@ -90,7 +90,7 @@ class Store:
                 self.db.execute("DELETE FROM records WHERE object=?",(key,))
                 self.db.execute("INSERT OR REPLACE INTO objects VALUES (?,?,?,?,?,?,?,'pending',NULL,0)",
                                 (key,etag,size,kind,gender,level,year))
-        self.set("inventory_complete",True); self.db.commit()
+        self.set("inventory_complete",True); self.set("scanned_kinds",list(kinds)); self.db.commit()
     def ingest(self,key,rows):
         obj=self.db.execute("SELECT kind FROM objects WHERE key=?",(key,)).fetchone()
         kind=obj[0]; count=0
@@ -134,7 +134,7 @@ class Store:
                     out[scope]["conflict"]=True
         return out
     def complete(self,year,gender,level,kind):
-        if not self.get("inventory_complete") or not self.get("inventory_stable",False): return False
+        if kind not in self.get("scanned_kinds",[]) or not self.get("inventory_complete") or not self.get("inventory_stable",False): return False
         # A malformed/mispartitioned object may contain any match ID.
         # Conservatively taint all groups of that source when any object is unread.
         return not self.db.execute("SELECT 1 FROM objects WHERE kind=? AND state!='done' LIMIT 1",(kind,)).fetchone()

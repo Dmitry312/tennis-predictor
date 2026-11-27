@@ -137,4 +137,78 @@ class Coverage(unittest.TestCase):
         self.s.ingest(X,[self.row(ts="2026-02-01",aces_p1=7)])
         self.assertEqual(self.s.latest(A,"nbbet_stats")[0]["payload"]["aces_p1"],7)
 
+
+
+class Adapter(unittest.TestCase):
+    def test_complete_listing_has_no_pbp_dependency(self):
+        class Client:
+            calls=[]
+            def list_objects_v2(self,**kwargs):
+                self.calls.append(kwargs)
+                return {"Contents":[{"Key":K,"ETag":"one","Size":100}]} if kwargs["Prefix"]=="nbbet_stats/gender=F/level=tour/" else {}
+        class Guard:
+            def check(self,**kwargs): pass
+        with tempfile.TemporaryDirectory() as t:
+            s=c.Store(Path(t)/"audit.sqlite"); client=Client()
+            first=r.inventory(s,client,"fixture",["nbbet_stats"],Guard())
+            s.inventory_finish(["nbbet_stats"])
+            self.assertEqual(len(client.calls),4)
+            self.assertEqual(s.db.execute("SELECT COUNT(*) FROM objects").fetchone()[0],1)
+            second=r.inventory(s,client,"fixture",["nbbet_stats"],Guard())
+            self.assertEqual(first,second); s.db.close()
+    def test_listing_error_never_marks_complete(self):
+        class Client:
+            def list_objects_v2(self,**kwargs): raise PermissionError("secret")
+        class Guard:
+            def check(self,**kwargs): pass
+        with tempfile.TemporaryDirectory() as t:
+            s=c.Store(Path(t)/"audit.sqlite")
+            with self.assertRaises(PermissionError): r.inventory(s,Client(),"fixture",["nbbet_stats"],Guard())
+            self.assertFalse(s.get("inventory_complete",False)); s.db.close()
+    def test_group_stream_projection_and_exact_get_count(self):
+        try: import pyarrow as pa; import pyarrow.parquet as pq
+        except ImportError: self.skipTest("Parquet integration runs in dependency CI stage")
+        from unittest.mock import patch
+        import io
+        buf=pa.BufferOutputStream()
+        pq.write_table(pa.Table.from_pylist([{"canonical_match_id":A,"scope":0,"aces_p1":0,
+                                            "raw_json":"excluded private payload"}]),buf,row_group_size=1)
+        data=buf.getvalue().to_pybytes()
+        class Client:
+            calls=0
+            def get_object(self,**kwargs):
+                self.calls+=1
+                if kwargs["IfMatch"]!="fixture": raise AssertionError("conditional read missing")
+                return {"Body":io.BytesIO(data),"ContentLength":len(data),"ETag":"fixture"}
+        class Guard:
+            decode_cap=1024**2
+            def check(self,**kwargs): pass
+        client=Client()
+        with tempfile.TemporaryDirectory() as t, patch.object(r.time,"sleep"):
+            values=list(r.rows(client,"fixture",(K,"fixture",len(data),"nbbet_stats"),Guard(),t,{}))
+        self.assertEqual(client.calls,1)
+        self.assertEqual(values[0]["aces_p1"],0)
+        self.assertNotIn("raw_json",values[0])
+    def test_bad_timestamp_and_schema_are_unknown_not_empty(self):
+        with self.assertRaises(ValueError): c.stamp("not a timestamp")
+        with self.assertRaises(ValueError): c.metric("private string")
+        self.assertIsNone(c.metric(float("nan")))
+        self.assertEqual(c.metric(0),0)
+    def test_cpu_memory_pressure_pauses_then_stops(self):
+        from unittest.mock import patch
+        fake={"MemTotal":4*1024**3,"MemAvailable":2*1024**3}
+        with tempfile.TemporaryDirectory() as t, patch.object(r,"meminfo",return_value=fake):
+            g=r.Guard(t,15)
+            with patch.object(g,"sample",return_value=({"MemAvailable":0},r.shutil.disk_usage(t),1)),patch.object(r.time,"sleep") as sleep:
+                with self.assertRaises(r.Stop): g.check()
+                self.assertGreater(sleep.call_count,0)
+    def test_launcher_and_snapshot_contract(self):
+        source=(ROOT/"infra/audit/production_stats_coverage.py").read_text()
+        self.assertIn('readonly=True,isolation_level="REPEATABLE READ"',source)
+        self.assertIn('duplicate_of IS NULL AND status IN (3,9)',source)
+        self.assertNotIn("fetch_match_page",source)
+        self.assertNotIn("put_object",source)
+        self.assertIn('"total_max_attempts":1',source)
+        self.assertIn('IfMatch=etag',source)
+
 if __name__=="__main__": unittest.main()

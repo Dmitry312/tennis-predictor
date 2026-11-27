@@ -310,7 +310,6 @@ def main():
             store.db.commit()
             try:
                 report=core.summarize(store,guard)
-                report_complete=report["complete"]
                 output=core.encoded(report)
                 # Publication guard: credentials and credential-shaped URLs never leave server.
                 if any(v and len(v)>=4 and v in output for v in
@@ -320,6 +319,7 @@ def main():
                     raise Stop("runtime_policy_unverified")
                 if guard: guard.check(extra_disk=len(output.encode())*3)
                 core.write_reports(report,Path(args.state_dir)/"report")
+                report_complete=report["complete"]
             except Exception: print("coverage_audit:report_failed",file=sys.stderr)
             store.db.close()
     if code: return 1
