@@ -204,3 +204,55 @@ def test_reverse_backfill(tmp_path, monkeypatch):
     assert not mod.run(start, end, tmp_path, max_days=1, reverse=True)
     assert mod.run(start, end, tmp_path, max_days=2, reverse=True)
     assert calls == [end, date(2025, 1, 2), start]
+
+def test_history_publishes_valid_correction_with_missing_match(monkeypatch):
+    import time
+    from datetime import date
+    from types import SimpleNamespace
+    from tennis_predictor.ingestion.nbbet import stats_crosscheck as mod
+
+    match = SimpleNamespace(match_id="abc", nbbet_match_id=123,
+                            nbbet_slug="123-slug", gender="M", level="challenger",
+                            match_date=date(2026, 11, 23), pbp_s3_path="pbp/example")
+    stored = {("abc", 0): ("2026-11-23", row(0, aces_p1=1, canonical_match_id="abc"))}
+    parsed = SimpleNamespace(stats=[row(0, aces_p1=2)],
+                             raw_page_tennis_event={"match": {"25": []}})
+    writes = []
+    monkeypatch.setattr(mod, "fetch_candidates", lambda *args: [match, SimpleNamespace(**{**vars(match), "match_id": "missing"})])
+    monkeypatch.setattr(mod, "get_s3_client", lambda: SimpleNamespace(
+        put_object=lambda **k: writes.append(k)))
+    monkeypatch.setattr(mod, "get_settings", lambda: SimpleNamespace(s3_bucket="test"))
+    monkeypatch.setattr(mod, "make_session", lambda **kw: object())
+    monkeypatch.setattr(mod, "load_group", lambda *args: stored)
+    monkeypatch.setattr(mod, "fetch_match_page", lambda *args: "<html/>")
+    monkeypatch.setattr(mod, "parse_match_page", lambda *args: parsed)
+    monkeypatch.setattr(mod.time, "sleep", lambda *_: None)
+    result = mod.reconcile(day=date(2026, 11, 23), lookback=1, apply=True,
+                           max_matches=100, pause=0.5, deadline=time.monotonic() + 100, allow_partial=True)
+    assert result['complete'] is False
+    assert result['issues'] == [{'match_id': 'missing', 'reason': 'missing_stats'}]
+    assert result["changed"] == 1
+    assert result["written"] == 1
+    assert len(writes) == 2
+    assert writes[0]["Key"].startswith("nbbet_raw/gender=M/level=challenger/year=2026/")
+    assert writes[1]["Key"].startswith("nbbet_stats/gender=M/level=challenger/year=2026/")
+    assert all(w["IfNoneMatch"] == "*" for w in writes)
+
+
+
+def test_partial_history_checkpoint_resume(tmp_path, monkeypatch):
+    from datetime import date
+    from tennis_predictor.ingestion.nbbet import stats_crosscheck_backfill as mod
+    start, end = date(2025, 1, 1), date(2025, 1, 2)
+    calls = []
+    def reconcile(**kw):
+        calls.append(kw["day"])
+        assert kw["allow_partial"]
+        return {"complete": kw["day"] == start}
+    monkeypatch.setattr(mod, "reconcile", reconcile)
+    assert not mod.run(start, end, tmp_path, apply=True, reverse=True, max_days=1)
+    assert (tmp_path / "2025-01-02.partial.json").exists()
+    assert not (tmp_path / "2025-01-02.apply.json").exists()
+    assert mod.run(start, end, tmp_path, apply=True, reverse=True)
+    assert mod.run(start, end, tmp_path, apply=True, reverse=True)
+    assert calls == [end, start]
