@@ -204,9 +204,17 @@ registry, manifest and acceptance JSON through Actions Artifacts. The report
 includes coverage, repeat import, database size, import timing and an indexed
 lookup benchmark for every alias.
 
+An offline synthetic run at the approved dataset size covered 351,928
+observations in 175,964 matches with 7,899 players, 8,131 aliases and zero
+quarantined aliases. Import took 10.617 s, the byte-identical repeat took
+8.590 s, and 8,131 scoped index lookups took 0.023 s. The SQLite registry
+was 2,940,928 bytes. The original Actions artifact was unavailable from the
+development environment, so its coverage and actual registry size still
+require running the workflow against the saved evidence.
+
 The registry keeps `people` and indexed `bulk_aliases` separately. For later
 owner-approved corrections use an explicit `--approval` packet with `dataset`,
-`parent`, `approval_ref`, offset-aware `recorded_at`, `reviewer` and a `groups`
+`parent`, `approval_ref`, offset-aware `recorded_at` and a `groups`
 mapping from evidence group IDs to owner keys. Reuse a key when the same
 person's aliases change. Each corrected packet replaces the active bulk alias
 set. Omitting an alias retires it from the new revision and leaves the prior
