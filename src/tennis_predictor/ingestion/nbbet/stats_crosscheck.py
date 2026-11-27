@@ -18,6 +18,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from sqlalchemy import select
 
+from tennis_predictor.ingestion.nbbet.stats_index import index, lookup
 from tennis_predictor.config import get_settings
 from tennis_predictor.ingestion.http import make_session
 from tennis_predictor.ingestion.nbbet.details import STAT_FIELDS, fetch_match_page, parse_match_page
@@ -94,15 +95,24 @@ def list_keys(s3, bucket, prefix):
     return sorted(keys)
 
 
-def read_rows(s3, bucket, key):
-    obj = s3.get_object(Bucket=bucket, Key=key)
+def read_rows(s3, bucket, key, etag=None):
+    try:
+        obj = s3.get_object(Bucket=bucket, Key=key, **({"IfMatch":etag} if etag else {}))
+    except Exception as exc:
+        code=getattr(exc,"response",{}).get("Error",{}).get("Code",type(exc).__name__)
+        log.error("stats_object_read_failed key=%r code=%s",key,code)
+        raise
     try:
         body = obj["Body"].read(32_000_001)
     finally:
         obj["Body"].close()
     if len(body) > 32_000_000:
         raise RuntimeError("partition size budget exceeded")
-    return pq.read_table(pa.BufferReader(body)).to_pylist()
+    try:
+        return pq.read_table(pa.BufferReader(body)).to_pylist()
+    except Exception:
+        log.error("stats_object_decode_failed key=%r",key)
+        raise
 
 
 def latest_rows(rows):
@@ -116,31 +126,42 @@ def latest_rows(rows):
     return result
 
 
-def load_group(s3, bucket, gender, level, year, matches):
-    """Read original PBP-linked partitions plus later crosscheck versions.
+def list_stat_objects(s3,bucket,prefix):
+    objects={}
+    try:
+        for page in s3.get_paginator("list_objects_v2").paginate(Bucket=bucket,Prefix=prefix):
+            for obj in page.get("Contents",[]):
+                key=obj["Key"]
+                if key.endswith(".parquet"):
+                    objects[key]=(obj["ETag"],obj["Size"])
+            if len(objects)>MAX_KEYS_PER_GROUP:
+                raise RuntimeError("partition listing budget exceeded")
+    except Exception:
+        log.error("stats_partition_listing_failed prefix=%r",prefix)
+        raise
+    return objects
 
-    For matches without PBP pointer, locate their stats by scanning the group's
-    partition keys. No match is silently skipped.
+
+def load_group(s3, bucket, gender, level, year, matches):
+    """Refresh complete object inventory; GET only new/changed files, no PBP lookup.
+
+    A missing match is returned only after successful complete synchronization.
+    Listed objects lost/denied during GET are fatal, never 'missing statistics'.
     """
     prefix = f"nbbet_stats/gender={gender}/level={level}/year={year}/"
-    keys = list_keys(s3, bucket, prefix)
-    original = set()
-    needs_discovery = any(not m.pbp_s3_path for m in matches)
-    for m in matches:
-        if m.pbp_s3_path:
-            original.add("nbbet_stats/" + m.pbp_s3_path.removeprefix("pbp/"))
-    # Crosscheck keys are separate from original partitions; older records
-    # remain immutable, and newest fetched_at wins on future runs.
-    selected = set(keys if needs_discovery else
-                   [k for k in keys if "-crosscheck-" in k] + list(original))
-    if not needs_discovery:
-        selected |= original
-    wanted = {str(m.match_id) for m in matches}
-    rows = []
-    for key in sorted(selected):
-        rows.extend(row for row in read_rows(s3, bucket, key)
-                    if str(row['canonical_match_id']) in wanted)
-    return latest_rows(rows)
+    objects=list_stat_objects(s3,bucket,prefix)
+    wanted={str(m.match_id) for m in matches}
+    def read_indexed(key,etag):
+        try:
+            return read_rows(s3,bucket,key,etag)
+        except Exception:
+            log.error("stats_index_object_refresh_failed key=%r",key)
+            raise
+    with index(bucket) as conn:
+        result=lookup(conn,prefix,objects,wanted,read_indexed,latest_rows)
+    log.info("stats_partition_index_ready prefix=%r objects=%d matches_requested=%d scopes_found=%d",
+             prefix,len(objects),len(wanted),len(result))
+    return result
 
 
 def fetch_candidates(day, lookback):
