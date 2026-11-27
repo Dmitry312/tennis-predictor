@@ -24,6 +24,7 @@ to the owner.
 
 The [Aggregation Engine and Match Data Store](aggregation.md) persist reusable
 match and set observations after successful single-match processing or correction.
+Owner-confirmed NBBet aggregation uses source-side statistics, HH:MM durations, and compatible opponent counters.
 The future Feature Engine reads indexed history and computes only requested
 features for prediction or chronological dataset building. Player state,
 checkpoints and caches remain optional implementation stages.

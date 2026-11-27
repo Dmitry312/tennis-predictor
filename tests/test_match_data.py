@@ -72,7 +72,7 @@ def test_real_catalog_snapshot(canonical, tmp_path):
     assert not any(r["player_id"] for r in rows)
     assert not any(r["family"] in ("rankings", "odds") for r in rows)
     assert "PARTIAL" in first["quality"] and "CONFLICT" in first["quality"]
-    assert "duration_unit_unverified" in (reader.folder / "matches.txt").read_text()
+    assert "nbbet_duration_hhmm" in (reader.folder / "matches.txt").read_text()
     second = build(canonical, tmp_path)
     assert second["version"] == first["version"]
     assert second["reused"] == 20 and not second["invalidated"]
@@ -89,16 +89,22 @@ def test_independent_service_returns_and_pbp(canonical):
     assert metric(rows, "games_won")["numerator"] == 12
     assert any(r["family"] == "pbp" and r["quality"] == "PARTIAL" for r in rows)
     assert all(not r["history_eligible"] for r in rows if r["family"] == "pbp")
-    assert metric(rows, "duration", scope=1)["raw_value"] == "00:34"
+    assert metric(rows, "duration_minutes", scope=1)["numerator"] == 34
+    assert metric(rows, "duration_minutes")["numerator"] == 55
+    assert metric(rows, "break_points_saved", side=2)["numerator"] == 3
+    assert metric(rows, "break_points_faced", side=2)["numerator"] == 8
+    assert metric(rows, "max_games_in_row")["quality"] == "VALID"
+    assert metric(rows, "max_games_in_row")["numerator"] == 7
+    assert metric(rows, "winners")["quality"] == "MISSING"
 
     changed = deepcopy(match.tables)
     changed["player_aliases"] = [
         r for r in changed["player_aliases"] if "players_json" not in r["evidence_ref"]
     ]
     rows = MatchAggregation(replace(match, tables=changed)).run()["metrics"]
-    assert metric(rows, "first_return_win_rate")["quality"] == "UNVERIFIED"
+    assert metric(rows, "first_return_win_rate")["quality"] == "VALID"
     assert metric(rows, "first_serve_win_rate")["quality"] == "VALID"
-    assert not metric(rows, "first_serve_win_rate")["history_eligible"]
+    assert metric(rows, "first_serve_win_rate")["history_eligible"]
 
     changed["match_player_stats"] = []
     rows = MatchAggregation(replace(match, tables=changed)).run()["metrics"]

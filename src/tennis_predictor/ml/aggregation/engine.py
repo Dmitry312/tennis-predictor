@@ -1,6 +1,7 @@
 """Transform one match into observations without computing historical features."""
 
 import json
+import re
 from collections import Counter, defaultdict
 
 from tennis_predictor.ml.canonical_layer.contracts import METRICS
@@ -156,6 +157,7 @@ class MatchAggregation:
 
     def score_facts(self, row, side, sets, valid, unique):
         games = []
+        durations = []
         for scope, score in enumerate(sets, 1):
             own, other = score[f"games_p{side}"], score[f"games_p{3 - side}"]
             additive = valid and not (
@@ -163,15 +165,31 @@ class MatchAggregation:
             )
             games.append((own, other) if additive else None)
             raw = score["duration_raw"]
+            minutes = None
+            if isinstance(raw, str) and re.fullmatch(r"[0-9]{2}:[0-5][0-9]", raw):
+                hour, minute = map(int, raw.split(":"))
+                minutes = hour * 60 + minute
+            durations.append(minutes)
+            quality = (
+                "MISSING"
+                if not raw
+                else "CONFLICT"
+                if minutes is None
+                else "VALID"
+                if valid
+                else "PARTIAL"
+            )
             self.emit(
                 "result",
-                "duration",
+                "duration_minutes",
                 side,
                 scope,
                 row,
-                "UNVERIFIED" if raw else "MISSING",
-                "duration_unit_unverified",
+                quality,
+                "nbbet_duration_hhmm",
+                value=minutes,
                 raw=raw,
+                unique=unique,
             )
             if valid:
                 self.emit(
@@ -199,6 +217,23 @@ class MatchAggregation:
                         "UNVERIFIED",
                         "match_tiebreak_points_are_not_games",
                     )
+        complete = valid and durations and all(value is not None for value in durations)
+        self.emit(
+            "result",
+            "duration_minutes",
+            side,
+            0,
+            row,
+            "VALID"
+            if complete
+            else "PARTIAL"
+            if any(v is not None for v in durations)
+            else "MISSING",
+            "complete_set_durations_required",
+            value=sum(durations) if complete else None,
+            samples=sum(v is not None for v in durations),
+            unique=unique,
+        )
         if valid:
             won = sum(s[f"games_p{side}"] > s[f"games_p{3 - side}"] for s in sets)
             for metric, value in (
@@ -278,9 +313,9 @@ class MatchAggregation:
         ]:
             side, scope = row["player_side"], row["scope"]
             group = key(row)[:-1]
-            details = self.service_orientation(row)
-            unique = len(versions) <= 1 and details is not None
-            refs = provenance(row, details) if details is not None else provenance(row)
+            oriented = self.match.get("source_match_id") is not None
+            unique = len(versions) <= 1 and oriented
+            refs = provenance(row)
             raw = json.loads(row.get("raw_json") or "{}")
             statuses = {}
             for metric in METRICS:
@@ -317,36 +352,21 @@ class MatchAggregation:
                     refs=refs,
                     unique=unique,
                 )
-            self.returns(row, by_key[(*group, 3 - side)], unique, details)
+            self.opponent_metrics(row, by_key[(*group, 3 - side)], unique, oriented)
 
-    def service_orientation(self, row):
-        receipt = row["ingested_at"]
-        compatible = [
-            r
-            for r in self.tables["match_results"]
-            if receipt and r["ingested_at"] == receipt and r.get("orientation") == "same"
-        ]
-        # Same receipt links one details revision to its stats; the details
-        # aliases independently verify the source ordering for these counters.
-        mapped = set()
-        details = compatible[0] if len(compatible) == 1 else None
-        if details is not None:
-            for alias in self.tables["player_aliases"]:
-                for s in (1, 2):
-                    if (
-                        alias["source_version"] == details["source_version"]
-                        and alias["evidence_ref"]
-                        == f"{details['evidence_ref']}/players_json/p{s}/1"
-                        and alias["player_side"] == s
-                    ):
-                        mapped.add(s)
-        return details if mapped == {1, 2} else None
-
-    def returns(self, row, opponents, unique, details):
+    def opponent_metrics(self, row, opponents, unique, oriented):
         side, scope = row["player_side"], row["scope"]
         opponent = opponents[0] if len(opponents) == 1 else None
-        for serve in ("first", "second"):
-            total, won = f"{serve}_serve_points_all", f"{serve}_serve_points_won"
+        for family, metric, won, total in (
+            ("return", "first_return_win_rate", "first_serve_points_won", "first_serve_points_all"),
+            (
+                "return",
+                "second_return_win_rate",
+                "second_serve_points_won",
+                "second_serve_points_all",
+            ),
+            ("stats", "break_points_saved", "break_points_won", "break_points_all"),
+        ):
             value = denominator = None
             refs = provenance(row)
             if opponent is None:
@@ -358,18 +378,16 @@ class MatchAggregation:
             else:
                 pair = [self.counter_quality(opponent, m, False)[0] for m in (won, total)]
                 refs = provenance(row, opponent)
-                if details is not None:
-                    refs += provenance(details)
                 if "CONFLICT" in pair:
                     quality, reason = "CONFLICT", "invalid_opponent_service_counts"
                 elif pair == ["MISSING", "MISSING"]:
                     quality, reason = "MISSING", "opponent_service_counts_missing"
-                elif details is None:
+                elif not oriented:
                     quality, reason = "UNVERIFIED", "compatible_service_side_unproven"
                 else:
                     quality, reason = (
                         ratio_quality(pair, opponent[total]),
-                        "opponent_service_complement",
+                        "opponent_count_complement",
                     )
                     denominator = opponent[total]
                     if (
@@ -379,8 +397,8 @@ class MatchAggregation:
                     ):
                         value = denominator - opponent[won]
             self.emit(
-                "return",
-                f"{serve}_return_win_rate",
+                family,
+                metric,
                 side,
                 scope,
                 row,
@@ -392,6 +410,20 @@ class MatchAggregation:
                 refs=refs,
                 unique=unique,
             )
+            if metric == "break_points_saved":
+                self.emit(
+                    family,
+                    "break_points_faced",
+                    side,
+                    scope,
+                    row,
+                    quality,
+                    reason,
+                    value=denominator,
+                    samples=denominator,
+                    refs=refs,
+                    unique=unique,
+                )
 
     def pbp(self):
         games = defaultdict(list)
