@@ -168,7 +168,7 @@ class MatchTransform:
             return False
         if self.config["mode"] == "strict_as_of" and self.player_status != "verified":
             return False
-        if kind == "statistics" and not self.stats_orientation_known(obs):
+        if kind == "statistics" and not self.meta.get("nbbet_match_id"):
             return False
         available = self.availability(obs, index)
         row = obs.rows[index]
@@ -204,16 +204,6 @@ class MatchTransform:
 
     def identity_known_at_cutoff(self):
         return self.cutoff is not None and all(t < self.cutoff for t in self.identity_recorded)
-
-    def stats_orientation_known(self, stats):
-        compatible = [
-            orientation(self.meta, row)
-            for details in self.by_source["nbbet_details"]
-            if self.compatible(stats, details)
-            for row in details.rows
-            if row.get("canonical_match_id") == self.match_id
-        ]
-        return bool(compatible) and set(compatible) == {"same"}
 
     def emit(self, table, obs, index, **values):
         row = self.common(obs, index)
