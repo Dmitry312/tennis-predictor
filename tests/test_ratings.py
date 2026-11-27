@@ -182,3 +182,51 @@ def test_catalog_match_store_and_registry_contract(tmp_path):
     import_approved_groups(evidence, registry, {**packet, "parent": approval["token"]})
     with pytest.raises(ValueError, match="exact approved registry pin"):
         load(facts, root / mode, PinnedIdentities(registry, 2))
+
+
+def test_cli_freezes_validation_choices_before_holdout(tmp_path, monkeypatch, capsys):
+    import json
+    import sys
+
+    from scripts import run_ratings
+
+    stream = [match(i, i, score=i % 2, target=i != 3) for i in range(6)]
+    source = {"match_data": "fixture", "registry_token": "approved"}
+    monkeypatch.setattr(run_ratings, "SnapshotReader", lambda *_: object())
+    monkeypatch.setattr(run_ratings, "PinnedIdentities", lambda *_: object())
+    monkeypatch.setattr(run_ratings, "load", lambda *_: (stream, source))
+    argv = [
+        "run_ratings.py",
+        "--match-data",
+        "unused",
+        "--canonical",
+        "unused",
+        "--registry",
+        "unused",
+        "--registry-revision",
+        "1",
+        "--output",
+        str(tmp_path),
+        "--splits",
+        *(str(DAY + timedelta(days=i)) for i in (0, 1, 2, 4, 6)),
+    ]
+    monkeypatch.setattr(sys, "argv", [*argv, "--compare"])
+    run_ratings.main()
+    frozen = capsys.readouterr().out
+    validation = json.loads(frozen)
+    assert len(validation["selected_on_validation"]) == 5
+    assert all(run["matches"] == 4 for run in validation["runs"].values())
+    path = tmp_path / "validation.json"
+    path.write_text(frozen)
+    monkeypatch.setattr(sys, "argv", [*argv, "--held-out", str(path)])
+    run_ratings.main()
+    final = json.loads(capsys.readouterr().out)
+    assert set(final["runs"]) == set(validation["selected_on_validation"].values())
+    assert all(set(run["metrics"]) == {"test"} for run in final["runs"].values())
+    assert all(run["matches"] == 6 for run in final["runs"].values())
+    assert len(rows(tmp_path / "baseline")) == 4
+    monkeypatch.setattr(
+        run_ratings, "load", lambda *_: (stream, {**source, "registry_token": "new"})
+    )
+    with pytest.raises(SystemExit):
+        run_ratings.main()

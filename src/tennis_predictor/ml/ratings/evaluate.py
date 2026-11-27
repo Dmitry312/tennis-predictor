@@ -6,9 +6,13 @@ from collections import defaultdict
 from dataclasses import dataclass, replace
 from datetime import date
 from itertools import pairwise
+from pathlib import Path
+
+from tennis_predictor.ml.canonical_layer.storage import checksum
 
 from .algorithms import MODELS, Config
 
+CODE = checksum(Path(__file__))
 FACTORS = {
     "elo_k": ("elo", (16, 24, 32)),
     "fast_k": ("fast", (48, 64, 96)),

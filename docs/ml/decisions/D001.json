@@ -1,0 +1,10 @@
+{
+  "id": "D001",
+  "status": "planned",
+  "hypothesis": "A shorter supervised training window improves recent-period generalization.",
+  "training_windows_years": [null, 7, 5, 3, 2, 1],
+  "null_window": "all eligible training history",
+  "rating_warmup": "all eligible rating history since 2016",
+  "validation": "rolling origin, then untouched chronological holdout",
+  "decision_rationale": null
+}

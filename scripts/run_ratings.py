@@ -12,10 +12,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from tennis_predictor.ml.aggregation.batch import SnapshotReader
-from tennis_predictor.ml.canonical_layer.evidence import encoded
+from tennis_predictor.ml.canonical_layer.evidence import encoded, fingerprint
 from tennis_predictor.ml.canonical_layer.identity import PinnedIdentities
+from tennis_predictor.ml.canonical_layer.storage import checksum
 from tennis_predictor.ml.ratings.algorithms import MODELS, Config
 from tennis_predictor.ml.ratings.engine import CODE, Reader, build
+from tennis_predictor.ml.ratings.evaluate import CODE as EVALUATION_CODE
 from tennis_predictor.ml.ratings.evaluate import Splits, evaluate, variants
 from tennis_predictor.ml.ratings.inputs import load
 
@@ -43,7 +45,12 @@ def main():
     snapshot = SnapshotReader(args.match_data, args.match_data_version)
     registry = PinnedIdentities(args.registry, args.registry_revision)
     matches, source = load(snapshot, args.canonical, registry)
-    report = {"algorithm_code": CODE, "source": source, "eligible_results": len(matches)}
+    report = {
+        "algorithm_code": CODE,
+        "evaluation_code": fingerprint([EVALUATION_CODE, checksum(Path(__file__))]),
+        "source": source,
+        "eligible_results": len(matches),
+    }
     choices = (
         list(variants())
         if args.compare or args.held_out
@@ -72,7 +79,7 @@ def main():
             models = tuple(model for model in models if selected[model] == name)
             if not models:
                 continue
-        folder = args.output / name
+        folder = args.output / "holdout" / name if args.held_out else args.output / name
         # Validation runs never expose the holdout in a rating output either.
         cohort = (
             [m for m in matches if m.day < splits.test] if splits and not args.held_out else matches
