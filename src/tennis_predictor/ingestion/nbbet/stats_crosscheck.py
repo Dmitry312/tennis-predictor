@@ -151,9 +151,14 @@ def load_group(s3, bucket, gender, level, year, matches):
     prefix = f"nbbet_stats/gender={gender}/level={level}/year={year}/"
     objects=list_stat_objects(s3,bucket,prefix)
     wanted={str(m.match_id) for m in matches}
+    def read_indexed(key,etag):
+        try:
+            return read_rows(s3,bucket,key,etag)
+        except Exception:
+            log.error("stats_index_object_refresh_failed key=%r",key)
+            raise
     with index(bucket) as conn:
-        result=lookup(conn,prefix,objects,wanted,
-                      lambda key,etag:read_rows(s3,bucket,key,etag),latest_rows)
+        result=lookup(conn,prefix,objects,wanted,read_indexed,latest_rows)
     log.info("stats_partition_index_ready prefix=%r objects=%d matches_requested=%d scopes_found=%d",
              prefix,len(objects),len(wanted),len(result))
     return result

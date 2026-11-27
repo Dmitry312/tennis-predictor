@@ -43,7 +43,7 @@ def lookup(conn,prefix,objects,wanted,read,latest):
         conn.execute("DELETE FROM rows WHERE key=?",(key,))
         for i,row in enumerate(read(key,etag)):
             mid=str(row["canonical_match_id"]); scope=int(row["scope"])
-            payload=json.dumps(row,default=str,sort_keys=True,allow_nan=False)
+            payload=json.dumps(row,default=str,sort_keys=True,allow_nan=True)
             conn.execute("INSERT INTO rows VALUES (?,?,?,?,?,?)",
                          (key,i,mid,scope,str(row.get("fetched_at") or ""),payload))
         conn.execute("INSERT OR REPLACE INTO objects VALUES (?,?,?,?)",(prefix,key,etag,size))

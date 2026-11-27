@@ -102,3 +102,9 @@ def test_existing_partial_and_success_markers_preserved(tmp_path,monkeypatch):
     b.run(date(2026,10,27),date(2026,10,29),tmp_path,apply=True,reverse=True)
     assert calls==[date(2026,10,27)]
     assert all((tmp_path/n).read_bytes()==v for n,v in before.items())
+
+
+def test_nullable_nan_values_preserve_existing_normalization():
+    s=S3(); s.add(OLD,[row(float("nan"))],"old")
+    loaded=load(s)[("a",0)][1]
+    assert m.stat_projection(loaded)["aces_p1"] is None
