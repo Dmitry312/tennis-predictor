@@ -157,7 +157,7 @@ def fetch_candidates(day, lookback):
         ).all()
 
 
-def reconcile(*, day, lookback, apply, max_matches, pause, deadline):
+def reconcile(*, day, lookback, apply, max_matches, pause, deadline, allow_partial=False):
     candidates = fetch_candidates(day, lookback)
     if len(candidates) > max_matches:
         raise RuntimeError(f"candidate count {len(candidates)} exceeds budget {max_matches}")
@@ -168,6 +168,7 @@ def reconcile(*, day, lookback, apply, max_matches, pause, deadline):
         groups[(m.gender, m.level, m.match_date.year)].append(m)
     summary = dict(candidates=len(candidates), checked=0, unchanged=0,
                    changed=0, missing_stats=0, failures=0, fields_changed=0, written=0)
+    issues = []
     detailed_changes = []
     pending = []
     consecutive_failures = 0
@@ -185,6 +186,7 @@ def reconcile(*, day, lookback, apply, max_matches, pause, deadline):
             old = by_match[mid]
             if not old:
                 summary["missing_stats"] += 1
+                issues.append({"match_id": mid, "reason": "missing_stats"})
                 continue
             try:
                 html = fetch_match_page(session, m.nbbet_slug)
@@ -193,10 +195,11 @@ def reconcile(*, day, lookback, apply, max_matches, pause, deadline):
                 parsed = parse_match_page(html, m.nbbet_match_id)
                 fresh = [{"canonical_match_id": mid, **row} for row in parsed.stats]
                 differences = stat_differences(old, fresh)
+                if differences:
+                    validate_changed_stats(fresh, differences)
                 summary["checked"] += 1
                 consecutive_failures = 0
                 if differences:
-                    validate_changed_stats(fresh, differences)
                     summary["changed"] += 1
                     summary["fields_changed"] += len(differences)
                     log.info("stats_changed match=%s fields=%d", mid, len(differences))
@@ -215,6 +218,7 @@ def reconcile(*, day, lookback, apply, max_matches, pause, deadline):
                     summary["unchanged"] += 1
             except Exception as exc:
                 summary["failures"] += 1
+                issues.append({"match_id": mid, "reason": type(exc).__name__})
                 consecutive_failures += 1
                 log.warning("stats_check_failed match=%s reason=%s", mid, type(exc).__name__)
                 if consecutive_failures >= 3:
@@ -223,7 +227,9 @@ def reconcile(*, day, lookback, apply, max_matches, pause, deadline):
         if corrections:
             pending.append((gender, level, year, corrections, raw_corrections))
     # Never publish partial audit results.
-    if summary['failures'] or summary['missing_stats']:
+    summary['issues'] = issues
+    summary['complete'] = not issues
+    if issues and not allow_partial:
         print(json.dumps(summary, sort_keys=True))
         raise RuntimeError('crosscheck incomplete: no corrections published')
     if apply:
