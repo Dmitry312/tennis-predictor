@@ -18,10 +18,13 @@ def run(start, end, state, apply=False, max_days=7, max_matches=300, pause=1.0, 
     processed = 0
     while start <= day <= end and processed < max_days:
         marker = state / f"{day.isoformat()}.{'apply' if apply else 'audit'}.json"
-        if not marker.exists():
+        partial = state / f"{day.isoformat()}.partial.json"
+        if not marker.exists() and not (apply and partial.exists()):
             result = reconcile(day=day, lookback=1, apply=apply,
                                max_matches=max_matches, pause=pause,
-                               deadline=time.monotonic() + 2400)
+                               deadline=time.monotonic() + 2400, allow_partial=apply)
+            if apply and not result.get("complete", True):
+                marker = partial
             tmp = marker.with_suffix(".tmp")
             tmp.write_text(json.dumps(result, default=str), encoding="utf-8")
             tmp.replace(marker)
