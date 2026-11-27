@@ -116,7 +116,7 @@ def groups(db):
                     WHEN observations=1 THEN 'singleton' ELSE 'name_candidate' END AS confidence
         FROM grouped g LEFT JOIN reasons r USING(group_id)
         ORDER BY CASE WHEN r.flags LIKE '%opposing_sides%' OR
-                          r.flags LIKE '%same_start%' OR r.flags LIKE '%conflicting_gender%' THEN 0
+                          r.flags LIKE '%same_start%' THEN 0
                       WHEN r.flags IS NOT NULL THEN 1 ELSE 2 END, g.group_id
     """)
 

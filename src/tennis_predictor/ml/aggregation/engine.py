@@ -4,6 +4,7 @@ import json
 import re
 from collections import Counter, defaultdict
 
+from tennis_predictor.ingestion.nbbet.status import NbBetStatus
 from tennis_predictor.ml.canonical_layer.contracts import METRICS
 from tennis_predictor.ml.canonical_layer.evidence import encoded
 
@@ -506,9 +507,10 @@ class MatchAggregation:
                 )
 
     def run(self):
-        self.results()
-        self.stats()
-        self.pbp()
+        if self.match["status"] != NbBetStatus.CANCELED:
+            self.results()
+            self.stats()
+            self.pbp()
         sides = [
             {
                 **self.sides[side],

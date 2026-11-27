@@ -140,3 +140,53 @@ def test_pinned_catalog_and_live_store_with_incremental_correction(tmp_path, mon
             player["player_id"], prediction_date=date(2030, 1, 1)
         )
     )
+
+
+def test_full_policy_derives_groups_and_verifies_every_side(tmp_path):
+    from scripts.import_approved_registry import verify_indexed_lookup
+
+    from tennis_predictor.ml.canonical_layer.storage import checksum
+
+    stage, registry = tmp_path / "stage.sqlite", tmp_path / "registry.sqlite"
+    rows = [match(1), match(2, "Ivanov I."), match(3, "Ivanov I.", gender="F")]
+    dataset = staging.extract(stage, Source(rows))["dataset"]
+    approval = {k: v for k, v in packet(dataset, {}).items() if k != "groups"}
+    expected = {
+        "players_by_gender": {"M": 2, "F": 2},
+        "aliases": 5,
+        "observations": 6,
+        "matches": 3,
+    }
+    with pytest.raises(ValueError, match="Full registry acceptance failed"):
+        import_approved_groups(stage, registry, approval, expected={**expected, "aliases": 4})
+    result = import_approved_groups(stage, registry, approval, expected=expected)
+    assert result["covered_observations"] == 6 and result["revision"] == 1
+    before = checksum(registry)
+    assert import_approved_groups(stage, registry, approval, expected=expected) == result
+    assert checksum(registry) == before
+    assert verify_indexed_lookup(registry, 1)["indexed_lookups"] == 5
+    api = ReviewedMappings(registry)
+    with pytest.raises(ValueError, match="pinned revision token"):
+        api.resolve_match(match(1), source="nbbet", revision=1, expected_token="wrong")
+    with closing(staging.connection(stage)) as db:
+        db.execute("UPDATE observations SET group_id=?", ("f" * 64,))
+    with pytest.raises(ValueError, match="index does not match sealed evidence"):
+        import_approved_groups(stage, registry, approval, expected=expected)
+
+
+def test_cancelled_match_does_not_enter_daily_statistics(tmp_path):
+    from dataclasses import replace
+
+    from tennis_predictor.ml.aggregation.engine import MatchAggregation
+
+    catalog = ROOT / "docs/ml/data_catalog"
+    report = build_canonical(CatalogAdapter(catalog), tmp_path / "canonical", CFG)
+    reader = CanonicalReader(tmp_path / "canonical" / CFG["mode"], report["version"])
+    mid = "00035326-4450-5d09-b060-86a1f6851e63"
+    valid = reader.load(mid, dict(reader.entries())[mid])
+    assert any(row["history_eligible"] for row in MatchAggregation(valid).run()["metrics"])
+    tables = {**valid.tables, "matches": [{**valid.tables["matches"][0], "status": 5}]}
+    cancelled = replace(valid, tables=tables)
+    stored = MatchAggregation(cancelled).run()
+    assert not stored["metrics"]
+    assert len(stored["match_sides"]) == 2

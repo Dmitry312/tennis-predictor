@@ -48,7 +48,6 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS event_match ON events(match_id,side,revision DESC);
 CREATE INDEX IF NOT EXISTS event_alias ON events(gender,normalized,revision);
-CREATE INDEX IF NOT EXISTS event_player ON events(player_id,revision);
 CREATE TABLE IF NOT EXISTS alias_review (
     revision INTEGER NOT NULL, match_id TEXT NOT NULL, side INTEGER NOT NULL,
     source TEXT NOT NULL, authority TEXT NOT NULL,
@@ -448,7 +447,9 @@ class ReviewedMappings:
                 )
             )
 
-    def resolve_match(self, row, *, source, policy=NBBET_EXACT_ALIAS_POLICY, revision=None):
+    def resolve_match(
+        self, row, *, source, policy=NBBET_EXACT_ALIAS_POLICY, revision=None, expected_token=None
+    ):
         """Resolve two sides against a single pinned registry snapshot."""
         mid = uuid_text(row["match_id"])
         if policy is not None and not isinstance(policy, ExactAliasPolicy):
@@ -463,6 +464,8 @@ class ReviewedMappings:
                 pin = db.execute("SELECT * FROM revisions WHERE revision=?", (revision,)).fetchone()
                 if pin is None:
                     raise ValueError("Unknown registry revision")
+            if expected_token is not None and (pin is None or pin["token"] != expected_token):
+                raise ValueError("Registry cache changed the pinned revision token")
             if pin is None:
                 return (quarantine("empty_registry"), quarantine("empty_registry"))
             results = tuple(
@@ -511,7 +514,6 @@ class ReviewedMappings:
         if len(candidates) != 1 or not candidates[0]["player_id"] or not candidates[0]["approved"]:
             return quarantine("ambiguous_or_unapproved_alias" if candidates else "new_alias")
         candidate = candidates[0]
-        start = observation_evidence(row, side)["start_ts"]
         overlap = db.execute(
             """
             SELECT 1 FROM bulk_match_quality WHERE match_id=? AND revision=(
@@ -520,18 +522,6 @@ class ReviewedMappings:
         """,
             (mid, pin["revision"]),
         ).fetchone()
-        if not overlap and start:
-            overlap = db.execute(
-                """
-                SELECT 1 FROM events e
-                WHERE e.player_id=? AND e.match_id!=? AND e.revision<=?
-                  AND julianday(json_extract(e.evidence,'$.start_ts'))=julianday(?)
-                  AND e.revision=(SELECT max(last.revision) FROM events last
-                      WHERE last.match_id=e.match_id AND last.side=e.side AND last.revision<=?)
-                LIMIT 1
-            """,
-                (candidate["player_id"], mid, pin["revision"], start, pin["revision"]),
-            ).fetchone()
         proof = db.execute(
             "SELECT token,recorded_at,approval_ref FROM revisions LEFT JOIN bulk_batches USING(revision) WHERE revision=?",
             (candidate["evidence_revision"],),

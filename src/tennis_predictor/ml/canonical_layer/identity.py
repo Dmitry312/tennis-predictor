@@ -10,7 +10,9 @@ class PinnedIdentities:
 
     def resolve(self, metadata, source_ref):
         row = {**metadata, "source_ref": source_ref}
-        matches = self.registry.resolve_match(row, source="nbbet", revision=self.revision)
+        matches = self.registry.resolve_match(
+            row, source="nbbet", revision=self.revision, expected_token=self.token
+        )
         # Snapshot-level provenance names the pinned revision. Keep only effective
         # evidence per shard so unrelated alias corrections can reuse it.
         return tuple(
