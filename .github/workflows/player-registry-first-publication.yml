@@ -1,0 +1,158 @@
+name: Publish first Player Registry version
+
+on:
+  push:
+    branches: [ML]
+    paths: ['.github/workflows/player-registry-first-publication.yml']
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: player-registry-s3-v1
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'Dmitry312/tennis-predictor' && github.ref == 'refs/heads/ML'
+    environment: player-identity-audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: b89fbf25b42d0750be0644878bfd632f9cf823c8
+          persist-credentials: false
+      - name: Retrieve approved registry from its original run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir "$RUNNER_TEMP/registry"
+          api="repos/$GITHUB_REPOSITORY/actions/artifacts/15180947951"
+          gh api "$api" > "$RUNNER_TEMP/registry/artifact.json"
+          jq -e '.id == 15180947951 and .workflow_run.id == 45961562029
+            and .name == "verified-player-registry-45961562029" and (.expired | not)
+            and (.digest | test("^sha256:[a-f0-9]{64}$"))' "$RUNNER_TEMP/registry/artifact.json" > /dev/null
+          gh api "$api/zip" > "$RUNNER_TEMP/registry/artifact.zip"
+          digest=$(jq -r '.digest | split(":")[1]' "$RUNNER_TEMP/registry/artifact.json")
+          printf '%s  %s\n' "$digest" "$RUNNER_TEMP/registry/artifact.zip" | sha256sum --check
+          python3 - "$RUNNER_TEMP/registry" <<'PY'
+          import shutil
+          import sys
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          root = Path(sys.argv[1])
+          with ZipFile(root / "artifact.zip") as archive:
+              for name, limit in (("registry.sqlite", 128 << 20), ("acceptance.json", 16384)):
+                  matches = [member for member in archive.infolist() if member.filename == name]
+                  if len(matches) != 1 or not 0 < matches[0].file_size <= limit:
+                      raise ValueError(f"Missing or oversized artifact member: {name}")
+                  with archive.open(matches[0]) as source, (root / name).open("xb") as target:
+                      shutil.copyfileobj(source, target)
+          PY
+      - name: Publish to S3 and verify a fresh download
+        env:
+          SSH_HOST: ${{ secrets.SERVER_HOST }}
+          SSH_USER: ${{ secrets.SERVER_USER }}
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SSH_FINGERPRINT: ${{ secrets.SERVER_HOST_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          umask 077
+          [[ "$SSH_HOST" =~ ^[A-Za-z0-9][A-Za-z0-9.-]*$ ]]
+          [[ "$SSH_USER" =~ ^[a-z_][a-z0-9_-]*$ && -n "$SSH_KEY" ]]
+          [[ "$SSH_FINGERPRINT" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]]
+          work="$RUNNER_TEMP/registry"
+          timeout 15s ssh-keyscan -T 10 -p 22 -t ed25519 -- "$SSH_HOST" > "$work/candidate" 2>/dev/null
+          awk 'NF == 3 && $2 == "ssh-ed25519" { print; count++ }
+               END { if (count != 1) exit 1 }' "$work/candidate" > "$work/known_hosts"
+          [[ "$(ssh-keygen -lf "$work/known_hosts" -E sha256 | awk '{print $2}')" == "$SSH_FINGERPRINT" ]]
+          printf '%s\n' "$SSH_KEY" > "$work/key"
+          unset SSH_KEY
+          git archive HEAD src scripts/player_registry_s3.py | tar -x -C "$work"
+
+          cat > "$work/verify.py" <<'PY'
+          import hashlib
+          import json
+          import re
+          import sqlite3
+          import sys
+          from pathlib import Path
+
+          root, path = map(Path, sys.argv[1:3])
+          acceptance = json.loads((root / "acceptance.json").read_text())
+          token = acceptance["token"]
+          if not re.fullmatch(r"[a-f0-9]{64}", token):
+              raise ValueError("Invalid acceptance token")
+          if (acceptance["dataset"], acceptance["revision"], acceptance["idempotent"],
+              acceptance["covered_observations"], acceptance["matches"],
+              acceptance["quarantined_aliases"]) != (
+                  "c01abdfa58a88bcf948283cbf8f1a24d1d3fe052556c0d203e2cd944c1a54d7c",
+                  1, True, 351928, 175964, 0):
+              raise ValueError("Unexpected source acceptance report")
+          with sqlite3.connect(path.as_uri() + "?mode=ro", uri=True) as db:
+              if db.execute("PRAGMA integrity_check").fetchall() != [("ok",)]:
+                  raise ValueError("SQLite integrity check failed")
+              if db.execute("SELECT revision,token,dataset FROM revisions").fetchall() != [
+                  (1, token, acceptance["dataset"])
+              ]:
+                  raise ValueError("Registry revision, token or dataset mismatch")
+              genders = dict(db.execute("SELECT gender,count(*) FROM people GROUP BY gender"))
+              aliases, missing = db.execute(
+                  "SELECT count(*), count(*) FILTER (WHERE p.player_id IS NULL) "
+                  "FROM bulk_aliases a LEFT JOIN people p "
+                  "ON p.player_id=a.player_id AND p.gender=a.gender WHERE a.revision=1"
+              ).fetchone()
+              if genders != {"M": 5176, "F": 2723} or (aliases, missing) != (8131, 0):
+                  raise ValueError("Registry counts or gender-scoped bindings mismatch")
+          with path.open("rb") as stream:
+              digest = hashlib.file_digest(stream, "sha256").hexdigest()
+          if len(sys.argv) > 3:
+              published = json.loads((root / "published.json").read_text())
+              fetched = json.loads((root / "fetched.json").read_text())
+              if published != fetched or (fetched["token"], fetched["sha256"], fetched["size"]) != (
+                  token, digest, path.stat().st_size
+              ):
+                  raise ValueError("Published and downloaded snapshot differ")
+          print(json.dumps({"revision": 1, "token": token, "players": sum(genders.values()),
+                            "players_by_gender": genders, "aliases": aliases,
+                            "sha256": digest, "size": path.stat().st_size, "integrity": "ok"}))
+          PY
+
+          remote=$(cat <<'SH'
+          set -eu
+          umask 077
+          work=$(mktemp -d)
+          trap 'rm -rf -- "$work"' EXIT
+          tar -xf - -C "$work"
+          cd /root/Tennis_pelmen_model
+          python="$PWD/.venv/bin/python"
+          "$python" "$work/verify.py" "$work" "$work/registry.sqlite" >/dev/null
+          "$python" "$work/scripts/player_registry_s3.py" --prefix ml/player-registry/v1 \
+            publish "$work/registry.sqlite" --expected-current root --confirm > "$work/published.json"
+          "$python" "$work/scripts/player_registry_s3.py" --prefix ml/player-registry/v1 \
+            fetch "$work/roundtrip.sqlite" > "$work/fetched.json"
+          "$python" "$work/verify.py" "$work" "$work/roundtrip.sqlite" roundtrip
+          SH
+          )
+          tar -C "$work" -cf - src scripts verify.py registry.sqlite acceptance.json |
+            timeout 240s ssh -F /dev/null -T -p 22 -o BatchMode=yes -o ConnectTimeout=15 \
+              -o HostKeyAlgorithms=ssh-ed25519 -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$work/known_hosts" -o GlobalKnownHostsFile=/dev/null \
+              -o IdentitiesOnly=yes -o IdentityAgent=none -o ForwardAgent=no \
+              -o ClearAllForwardings=yes -i "$work/key" -l "$SSH_USER" -- "$SSH_HOST" "$remote" |
+            tee "$work/verified.json"
+          jq -e '.integrity == "ok" and .players == 7899 and .aliases == 8131' "$work/verified.json" >/dev/null
+          {
+            echo '### Player Registry S3 round trip'
+            echo '```json'
+            jq . "$work/verified.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove runner files
+        if: always()
+        run: rm -rf -- "$RUNNER_TEMP/registry"
