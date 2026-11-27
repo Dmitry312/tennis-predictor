@@ -1,7 +1,7 @@
 # ML foundation — agreed direction
 
 ## Architecture
-Canonical Parquet layer -> validated match aggregates -> chronological Player State Engine -> versioned Feature Store -> datasets -> training/calibration/backtest and inference. Reuse the same feature functions in replay and inference. Tour/Challenger singles only; odds isolated from model inputs. Keep heavy computation off production where practical. No new production services or database migrations at this stage.
+Canonical Parquet layer -> Aggregation Engine -> Match Data Store -> on-demand Feature Engine -> datasets and inference. A versioned Feature Store may cache requested prematch vectors. Reuse the same feature functions in replay and inference. Tour/Challenger singles only; odds isolated from model inputs. Keep heavy computation off production where practical. No new production services or database migrations at this stage.
 
 ## Canonical Data Layer v1
 
@@ -20,11 +20,25 @@ Match-local winners, cross-match identity, as-of availability and
 training eligibility have separate gates. Escalate new domain ambiguities
 to the owner.
 
+## Postmatch processing and historical features
+
+The [Aggregation Engine and Match Data Store](aggregation.md) persist reusable
+match and set observations after successful single-match processing or correction.
+Owner-confirmed NBBet aggregation uses source-side statistics, HH:MM durations, and compatible opponent counters.
+The future Feature Engine reads indexed history and computes only requested
+features for prediction or chronological dataset building. Player state,
+checkpoints and caches remain optional implementation stages.
+Match-local binary targets are independent of longitudinal identity and
+publication time. Historical completed-match facts are usable on later UTC
+dates under the explicit research convention. Live facts are usable after
+successful processing. Dataset builders must exclude same-player multiple-match
+days from target eligibility while retaining their facts for later dates.
+
 ## Temporal and storage contracts
 Separate event time, available_at, ingestion time and prediction cutoff. Strict mode requires verified availability; historical replay uses explicitly documented conservative assumptions and must not be presented as strict. Unknown ranking provenance is excluded from strict features. Immutable manifests pin source object versions or content hashes; checkpoint and replay on historical corrections. Store derived Parquet under ml/ with separate identity, aggregation, state, feature, dataset and model versions. Keep odds separate and join only at backtest time using verified observation timing.
 
 ## Experiments and roadmap
-Canonical layer -> aggregates -> state/checkpoints -> feature store -> dataset builder -> Elo/logistic baseline -> boosting and ablations -> calibration/backtest -> inference. Chronological folds and untouched holdout; log loss primary, Brier/calibration secondary. Candidate features: Elo, rank, form, surface, opponent strength, serve/return, fatigue, pressure, tiebreaks, H2H, style. No mass feature generation until contracts and audit gates are reviewed.
+Canonical layer -> reusable match facts -> on-demand features -> dataset builder -> Elo/logistic baseline -> boosting and ablations -> calibration/backtest -> inference. Chronological folds and untouched holdout; log loss primary, Brier/calibration secondary. Candidate features: Elo, rank, form, surface, opponent strength, serve/return, fatigue, pressure, tiebreaks, H2H, style. No mass feature generation until contracts and audit gates are reviewed.
 
 ## User-requested ML experiment agent
 Explicit project requirement: create a separate ML agent that accepts user hypotheses and wishes, runs reproducible experiments, compares results, maintains an experiment journal and reports findings. Remind the user when Feature Store, Dataset Builder and a reproducible baseline are ready; then design the agent with bounded compute, immutable experiment configurations, holdout protection and no autonomous production deployment. This is a roadmap item, not an active agent or scheduled reminder.

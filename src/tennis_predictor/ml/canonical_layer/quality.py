@@ -15,7 +15,7 @@ SERVE = (
     ("service_games_won", "service_games_all"),
 )
 BREAK = ("break_points_won", "break_points_all")
-UNVERIFIED = {"winners", "unforced_errors", "max_points_in_row", "max_games_in_row"}
+NONADDITIVE = {"max_points_in_row", "max_games_in_row"}
 
 
 def counter(value, minimum=0):
@@ -61,7 +61,7 @@ def statistics(ctx, observation):
     reconciliation_conflicts = set()
     for side in (1, 2):
         set_scopes = {scope for s, scope in scope_values if s == side and scope > 0}
-        for metric in sorted(set(METRICS) - UNVERIFIED):
+        for metric in sorted(set(METRICS) - NONADDITIVE):
             match = scope_values.get((side, 0), {}).get(metric)
             sets = [scope_values[side, scope][metric] for scope in sorted(set_scopes)]
             if (
@@ -150,8 +150,6 @@ def statistics(ctx, observation):
                     quality(metric, "conflict", "invalid_counter_ratio_or_scope")
                 elif values[metric] is None:
                     quality(metric, "missing", "counter_missing")
-                elif metric in UNVERIFIED:
-                    quality(metric, "unverified", "metric_semantics_unverified")
                 else:
                     quality(metric, "valid", "counter_valid")
             for category, fields in (
