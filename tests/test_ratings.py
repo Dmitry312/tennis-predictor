@@ -176,7 +176,10 @@ def test_catalog_match_store_and_registry_contract(tmp_path):
     batch.build(batch.CanonicalReader(root / mode, canonical["version"]), tmp_path / "facts")
     facts = batch.SnapshotReader(tmp_path / "facts")
     matches, source = load(facts, root / mode, identity)
-    assert source["input_matches"] == 20 and len(matches) > 0
+    assert source["input_matches"] == 20
+    assert {
+        facts.match(item.match_id)["match_sides"][0]["source_match_id"] for item in matches
+    } == {207964, 318197, 368682, 531103, 719212, 730766, 750496}
     assert source["registry_token"] == approval["token"]
     assert build(tmp_path / "ratings", matches, source)["matches"] == len(matches)
     import_approved_groups(evidence, registry, {**packet, "parent": approval["token"]})
@@ -230,3 +233,64 @@ def test_cli_freezes_validation_choices_before_holdout(tmp_path, monkeypatch, ca
     )
     with pytest.raises(SystemExit):
         run_ratings.main()
+
+
+@pytest.mark.parametrize("games_on_debut", [1, 2])
+def test_first_surface_anchors_to_frozen_global(tmp_path, games_on_debut):
+    # Repeat identical histories in disjoint player pairs to create equal
+    # opponents above and below 1500 without seeding states from future data.
+    warmup = [
+        match(
+            f"warm-{day}-{player}",
+            day,
+            player,
+            f"rookie-{day}-{player}",
+            surface="hard",
+            score=int(player.startswith("high")),
+        )
+        for day in range(75)
+        for player in ("high", "high-opp", "low", "low-opp")
+    ]
+    debut = [
+        match(
+            f"debut-{i}-{player}",
+            75,
+            player,
+            player + "-opp",
+            surface="grass",
+            score=int(player == "high"),
+        )
+        for i in range(games_on_debut)
+        for player in ("high", "low")
+    ]
+    full, incremental = tmp_path / "full", tmp_path / "incremental"
+    build(incremental, warmup, {})
+    inc = build(incremental, warmup + debut, {})
+    assert inc["days_reused"] == 75
+    assert build(full, reversed(warmup + debut), {})["version"] == inc["version"]
+    assert rows(full) == rows(incremental)
+    with closing(Reader(full).connect()) as db:
+        for player, direction in (("high", 1), ("low", -1)):
+            states = {
+                model: (PACK.unpack(pre), PACK.unpack(post))
+                for model, pre, post in db.execute(
+                    "SELECT model,pre,post FROM states WHERE player=? AND day=? "
+                    "AND (model='elo' OR (model='surface' AND surface='grass'))",
+                    (player, (DAY + timedelta(days=75)).isoformat()),
+                )
+            }
+            global_pre, global_post = states["elo"]
+            surface_pre, surface_post = states["surface"]
+            assert direction * (global_pre[0] - 1500) > 200
+            assert surface_pre[0] == global_pre[0]
+            assert surface_pre[3] == 0
+            assert surface_post[3] == games_on_debut
+            assert (
+                surface_post[0] == global_post[0] == global_pre[0] + direction * 12 * games_on_debut
+            )
+            for left_pre, probabilities in db.execute(
+                "SELECT left_pre,probabilities FROM predictions WHERE left_id=? AND day=?",
+                (player, (DAY + timedelta(days=75)).isoformat()),
+            ):
+                assert PACK.unpack_from(left_pre, 2 * PACK.size)[0] == global_pre[0]
+                assert unpack("<5d", probabilities)[2] == 0.5

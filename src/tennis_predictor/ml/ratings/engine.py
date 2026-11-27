@@ -18,7 +18,7 @@ from tennis_predictor.ml.canonical_layer.storage import checksum
 
 from .algorithms import MODELS, Config, State, inactive, initial, probability, surface_state, update
 
-VERSION = "ratings-v1"
+VERSION = "ratings-v1.1"
 DEFAULT_CONFIG = Config()
 PACK = struct.Struct("<dddI")
 CODE = fingerprint(
@@ -86,11 +86,15 @@ def replay(db, periods, config):
         pre = {}
         predictions = []
 
-        def prepare(slot, pre=pre, day=day):
+        def prepare(slot, global_state, pre=pre, day=day):
             if slot not in pre:
                 model = slot[2]
                 if slot not in latest:
-                    pre[slot] = initial(model, config)
+                    pre[slot] = (
+                        State(rating=global_state.rating)
+                        if model == "surface"
+                        else initial(model, config)
+                    )
                 else:
                     prior, state = latest[slot]
                     gap = (day - prior).days
@@ -112,7 +116,10 @@ def replay(db, periods, config):
                     scope = match.surface if model == "surface" else ""
                     a = (match.gender, match.left, model, scope)
                     b = (match.gender, match.right, model, scope)
-                    left, right = prepare(a), prepare(b)
+                    left, right = (
+                        prepare(a, left_states[0] if left_states else None),
+                        prepare(b, right_states[0] if right_states else None),
+                    )
                     if model == "surface":
                         left = surface_state(left, left_states[0], config)
                         right = surface_state(right, right_states[0], config)

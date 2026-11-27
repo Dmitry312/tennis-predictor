@@ -20,17 +20,23 @@ and activation handling before these states can serve predictions.
 
 ## Equations and defaults
 
-All models start at 1500. Put `q = ln(10)/400`, `L(x) = 1/(1+exp(-x))`
+Global Elo, Fast Elo, Glicko and Glicko-2 start at 1500. Put `q = ln(10)/400`, `L(x) = 1/(1+exp(-x))`
 and `g(φ) = (1+3φ²/π²)^(-1/2)`. Logistic arguments are clipped to ±35
 for finite logs and updates at extreme mismatches.
 
 - Global and Fast Elo independently forecast `L(q(r_i − r_j))`.
   Their day update is `r_i += K Σ(y_ij − p_ij)`, using K 24 and 64 respectively.
 - Surface Elo maintains a separate latent rating `s_i` and count `n_i` per
-  known surface. Effective rating is `e_i = (n_i s_i + λ r_i)/(n_i + λ)`
+  known surface. On the first observed day for a surface, initialize its
+  latent rating to the player’s frozen pre-day Global Elo, with count zero.
+  All matches on that first day share this anchor and count. Effective rating is `e_i = (n_i s_i + λ r_i)/(n_i + λ)`
   with λ 20 and global pre-day `r_i`. Predict `L(q(e_i − e_j))` and
   update `s_i += 24 Σ(y_ij − p_ij)`, increasing the surface count only
-  for matches on that surface. Unknown surface uses Global Elo for the
+  for matches on that surface. Subsequent days carry forward the latent
+  rating and use the current pre-day Global Elo for shrinkage. For two
+  players at 2000 with no grass history, a single win moves both the winner’s
+  latent grass rating and Global Elo to 2012. The next effective grass
+  rating is 2012 if no other matches change Global Elo. Unknown surface uses Global Elo for the
   surface prediction and makes no surface-state update. The independent
   non-surface models still learn the result.
 - Glicko starts with RD 350, capped at 350. Between active periods
@@ -91,10 +97,11 @@ the prefix still costs I/O, and a comparison stores a snapshot per variant.
 
 Run `uv run --locked python scripts/benchmark_ratings.py` for the generated
 176,000-match replay and 100-match append benchmark. The checked-in real
-catalog has 20 matches and is a smoke test. No full-history grading or
+catalog has 20 matches. See the [match-by-match audit](experiments/rating-catalog-audit.md).
+No full-history grading or
 ratings deployment has been run.
 
-Measured on a local synthetic result stream of 176,000 matches across 1,760
+The initial v1 implementation was measured on a local synthetic result stream of 176,000 matches across 1,760
 days. Full replay took 27.171 s. Appending the final 100 matches took 2.361 s
 and reused 1,759 days. SQLite size was 309,473,280 bytes. The append and full
 runs produced the same logical version. The timing excludes Match Data Store

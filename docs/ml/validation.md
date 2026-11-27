@@ -24,4 +24,4 @@ or event composition. Drift by itself is insufficient grounds for feature
 removal. Compare raw features with causal cohort-normalized variants using
 only prior cohort statistics. No empirical drift results are available.
 
-Future Dataset Builder runs include [D001 and D002](decisions/index.md).
+Future Dataset Builder runs include [D001 and D002](experiments/index.md#planned-dataset-builder-experiments).
