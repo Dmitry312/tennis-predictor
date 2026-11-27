@@ -1,6 +1,9 @@
 name: Verify full player registry import
 
 on:
+  push:
+    branches: [ml-registry-integration-v1]
+    paths: ['.github/workflows/player-registry-full-import.yml']
   workflow_dispatch:
     inputs:
       saved_evidence_artifact_id:
@@ -36,7 +39,7 @@ jobs:
       - name: Import and validate without production access
         env:
           GH_TOKEN: ${{ github.token }}
-          EVIDENCE_ARTIFACT: ${{ inputs.saved_evidence_artifact_id }}
+          EVIDENCE_ARTIFACT: ${{ inputs.saved_evidence_artifact_id || '15140813328' }}
           USE_SAVED_EVIDENCE: ${{ inputs.use_saved_evidence_url }}
           SAVED_EVIDENCE_URL: ${{ inputs.use_saved_evidence_url && secrets.SAVED_PLAYER_EVIDENCE_URL || '' }}
         run: |
