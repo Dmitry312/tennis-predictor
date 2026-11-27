@@ -144,7 +144,7 @@ def snapshot(store,s,guard):
         with conn.cursor(name="coverage_denominator") as cur:
             cur.itersize=512
             cur.execute("""SELECT match_id::text,nbbet_match_id,EXTRACT(YEAR FROM match_date)::int,
-                  gender,level,surface,left(tournament_name,512),status,
+                  gender,level,surface,tournament_name,status,
                   (duplicate_of IS NULL AND status IN (3,9) AND gender IN ('M','F')
                    AND level IN ('tour','challenger') AND match_date>=DATE '2016-01-01') AS eligible,
                   details_fetched_at,details_version,has_pbp

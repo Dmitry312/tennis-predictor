@@ -211,4 +211,37 @@ class Adapter(unittest.TestCase):
         self.assertIn('"total_max_attempts":1',source)
         self.assertIn('IfMatch=etag',source)
 
+
+
+class PostgreSQLSnapshot(unittest.TestCase):
+    def test_actual_pg16_readonly_snapshot_and_control_denominator(self):
+        import os
+        if os.environ.get("COVERAGE_TEST_POSTGRES")!="1": self.skipTest("isolated PG16 CI service only")
+        import psycopg2
+        from types import SimpleNamespace
+        config=dict(host="127.0.0.1",port=5432,user="postgres",password="offline-fixture-password",dbname="postgres")
+        conn=psycopg2.connect(**config); conn.autocommit=True
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""CREATE TABLE IF NOT EXISTS public.matches (
+                    match_id uuid PRIMARY KEY, nbbet_match_id int, match_date date,
+                    gender text, level text, surface text, tournament_name text,
+                    status int, duplicate_of uuid,details_fetched_at timestamp,
+                    details_version int,has_pbp bool)""")
+                cur.execute("TRUNCATE public.matches")
+                cur.execute("INSERT INTO public.matches VALUES (%s,249197,'2020-01-15','F','tour','hard','Fixture',3,NULL,NULL,1,false)",(A,))
+                cur.execute("INSERT INTO public.matches VALUES (%s,453599,'2020-01-15','M','tour',NULL,'Fixture',8,NULL,NULL,1,false)",(B,))
+            sconfig=SimpleNamespace(**{"postgres_"+k:v for k,v in
+                (("host",config["host"]),("port",5432),("user","postgres"),("password",config["password"]),("db","postgres"))})
+            class Guard:
+                def check(self,**kwargs): pass
+            with tempfile.TemporaryDirectory() as temp:
+                state=c.Store(Path(temp)/"pg.sqlite")
+                r.snapshot(state,sconfig,Guard())
+                rows=state.db.execute("SELECT nbid,eligible,pbp_flag FROM matches ORDER BY nbid").fetchall()
+                self.assertEqual(rows,[(249197,1,0),(453599,0,0)])
+                self.assertIsNotNone(state.get("pg_snapshot"))
+                state.db.close()
+        finally: conn.close()
+
 if __name__=="__main__": unittest.main()

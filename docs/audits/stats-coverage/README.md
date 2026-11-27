@@ -36,7 +36,7 @@ At pressure: pause5s/recheck, max120s then safe stop/checkpoint, no service mani
 
 SQLite cache8MiB, object transactions: crash/interruption rolls back current object, next explicit resume retries it; completed objects not downloaded again. Inventory re-list is intentional verification, not uncontrolled GET retry. No cap on total number of files/years; a 5.5h operational session deadline checkpoints, resume same command to finish logical operation. Last report remains explicitly incomplete until final completion. Disk/WAL resources still monitored; checkpoint must not be committed.
 
-Potential risks: large row group allocation may hit existing hard cap before Python can inspect; unknown objects remain unknown. Changes during long scans can force another pass. SQL snapshot fetch pause can exceed idle timeout and safely abort; re-run before PG snapshot commit starts fresh. Once snapshot committed, resume reuses it. Latest fetched_at is source receipt ordering, not source publication time. Truncated tournament labels capped512 characters are not proof of distinct edition identity.
+Potential risks: large row group allocation may hit existing hard cap before Python can inspect; unknown objects remain unknown. Changes during long scans can force another pass. SQL snapshot fetch pause can exceed idle timeout and safely abort; re-run before PG snapshot commit starts fresh. Once snapshot committed, resume reuses it. Latest fetched_at is source receipt ordering, not source publication time. Tournament names are preserved for grouping, but names alone do not prove distinct edition identity.
 
 ## Source root cause / boundaries
 

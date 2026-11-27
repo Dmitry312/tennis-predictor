@@ -12,6 +12,13 @@ permissions:
   contents: read
 jobs:
   offline:
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: offline-fixture-password
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 3s --health-retries 10
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -25,8 +32,10 @@ jobs:
         run: python -I -S tests/test_stats_coverage.py
       - run: python -m py_compile infra/audit/stats_coverage_core.py infra/audit/production_stats_coverage.py
       - name: Install only Parquet test dependency
-        run: python -m pip install pyarrow==19.0.1
-      - name: Run adapter regression with real Parquet fixtures
+        run: python -m pip install pyarrow==19.0.1 psycopg2-binary==2.9.10
+      - name: Run adapter regression with real Parquet and isolated PostgreSQL16 fixtures
+        env:
+          COVERAGE_TEST_POSTGRES: '1'
         run: python -I tests/test_stats_coverage.py
       - name: Validate manual launcher syntax
         run: bash -n infra/audit/run_stats_coverage.sh
