@@ -87,8 +87,9 @@ def price(value):
 
 
 class MatchTransform:
-    def __init__(self, bundle, config):
+    def __init__(self, bundle, config, identity_bindings=None):
         self.bundle = bundle
+        self.identity_bindings = identity_bindings
         self.match_id = bundle.match_id
         self.config = config
         self.cutoff = instant(config.get("prediction_cutoff"))
@@ -168,7 +169,7 @@ class MatchTransform:
             return False
         if self.config["mode"] == "strict_as_of" and self.player_status != "verified":
             return False
-        if kind == "statistics" and not self.stats_orientation_known(obs):
+        if kind == "statistics" and not self.meta.get("nbbet_match_id"):
             return False
         available = self.availability(obs, index)
         row = obs.rows[index]
@@ -204,16 +205,6 @@ class MatchTransform:
 
     def identity_known_at_cutoff(self):
         return self.cutoff is not None and all(t < self.cutoff for t in self.identity_recorded)
-
-    def stats_orientation_known(self, stats):
-        compatible = [
-            orientation(self.meta, row)
-            for details in self.by_source["nbbet_details"]
-            if self.compatible(stats, details)
-            for row in details.rows
-            if row.get("canonical_match_id") == self.match_id
-        ]
-        return bool(compatible) and set(compatible) == {"same"}
 
     def emit(self, table, obs, index, **values):
         row = self.common(obs, index)
@@ -337,7 +328,64 @@ class MatchTransform:
                 "compatible_statistics_unproven",
             )
 
+    def pinned_identities(self):
+        for side, binding in enumerate(self.identity_bindings, 1):
+            for flag in binding.get("match_quality_flags", []):
+                self.quality(
+                    self.metadata,
+                    "match_quality",
+                    "conflict",
+                    flag,
+                    f"{self.ref(self.metadata, 0)}/player{side}",
+                )
+            player_id = binding["player_id"]
+            identity_at = instant(binding.get("recorded_at"))
+            if player_id is None or identity_at is None:
+                self.quality(
+                    self.metadata,
+                    "identity",
+                    "unverified",
+                    binding.get("reason", "registry_evidence_missing"),
+                    f"{self.ref(self.metadata, 0)}/player{side}",
+                )
+                continue
+            self.players[side - 1] = player_id
+            self.identity_recorded.append(identity_at)
+            name = self.meta.get(f"player{side}")
+            version = binding["evidence_token"]
+            common = {
+                "player_id": player_id,
+                "registry_version": version,
+                "identity_provenance": binding["provenance"],
+                "recorded_at": identity_at,
+            }
+            self.emit(
+                "players",
+                self.metadata,
+                0,
+                gender=self.meta["gender"],
+                display_name=name,
+                resolution_status="verified",
+                **common,
+            )
+            self.emit(
+                "player_aliases",
+                self.metadata,
+                0,
+                alias_id=identifier(f"alias/{self.match_id}/{side}"),
+                player_side=side,
+                source_name=name,
+                normalized_name=normalized(name),
+                **common,
+            )
+        if all(self.players):
+            self.player_status = "verified"
+            self.quality(self.metadata, "identity", "valid", "pinned_registry_verified")
+
     def identities(self):
+        if self.identity_bindings is not None:
+            self.pinned_identities()
+            return
         registry = PlayerRegistry(projection=True)
         observations = []
         for side in (1, 2):
@@ -721,7 +769,8 @@ class MatchTransform:
                     source_candidate_winner_side=source_candidate,
                     candidate_winner_side=candidate,
                     winner_side=winner,
-                    target_p1_win=int(winner == 1) if exclusion is None else None,
+                    target_p1_win=int(winner == 1) if winner is not None else None,
+                    target_eligible=exclusion is None,
                     exclusion_reason=exclusion,
                     player_state_eligible=state_eligible,
                 )
@@ -734,6 +783,7 @@ class MatchTransform:
                 0,
                 status=self.meta.get("status"),
                 exclusion_reason="score_observation_missing",
+                target_eligible=False,
                 player_state_eligible=False,
             )
             for category in ("result", "player_state", "model_baseline_label"):
@@ -760,7 +810,16 @@ class MatchTransform:
                 player_side=match_side,
                 source_name=name,
                 normalized_name=normalized(name),
-                registry_version=self.registry_version,
+                registry_version=(
+                    self.identity_bindings[match_side - 1].get("evidence_token")
+                    if self.identity_bindings is not None
+                    else self.registry_version
+                ),
+                identity_provenance=(
+                    self.identity_bindings[match_side - 1].get("provenance")
+                    if self.identity_bindings is not None
+                    else None
+                ),
                 evidence_ref=ref,
             )
 

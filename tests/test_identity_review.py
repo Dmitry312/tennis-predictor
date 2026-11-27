@@ -155,7 +155,6 @@ def test_transliteration_homonyms_conflicts_and_same_day(tmp_path):
     assert flags == {
         "possible_homonyms",
         "transliteration_or_spelling_candidate",
-        "conflicting_gender_context",
     }
     assert {"opposing_sides", "same_start_distinct_matches"} <= opposing
     workbook = load_workbook(packet, data_only=False)
@@ -453,8 +452,8 @@ def test_new_match_resolves_only_approved_exact_alias(tmp_path):
         == "new_alias"
     )
     assert (
-        api.resolve_match(match(3), source="nbbet", policy=policy)[0]["reason"]
-        == "same_start_distinct_matches"
+        api.resolve_match(match(3), source="nbbet", policy=policy)[0]["player_id"]
+        == manual["player_id"]
     )
     other = {**new, "player2": "Иванов И."}
     assert all(

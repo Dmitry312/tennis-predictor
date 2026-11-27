@@ -9,10 +9,6 @@ from collections.abc import Iterable
 from itertools import islice
 from pathlib import Path
 
-from openpyxl import Workbook, load_workbook
-from openpyxl.cell import WriteOnlyCell
-from openpyxl.utils import get_column_letter
-
 from .staging import VERSION, connection, dataset_digest, payload, review_dir
 
 SHEET_ROWS = 500_000
@@ -86,6 +82,8 @@ def show(value):
 
 
 def append(sheet, values):
+    from openpyxl.cell import WriteOnlyCell
+
     cells = []
     for value in values:
         cell = WriteOnlyCell(sheet, value=show(value))
@@ -118,7 +116,7 @@ def groups(db):
                     WHEN observations=1 THEN 'singleton' ELSE 'name_candidate' END AS confidence
         FROM grouped g LEFT JOIN reasons r USING(group_id)
         ORDER BY CASE WHEN r.flags LIKE '%opposing_sides%' OR
-                          r.flags LIKE '%same_start%' OR r.flags LIKE '%conflicting_gender%' THEN 0
+                          r.flags LIKE '%same_start%' THEN 0
                       WHEN r.flags IS NOT NULL THEN 1 ELSE 2 END, g.group_id
     """)
 
@@ -188,6 +186,8 @@ def observation_fields(row):
 
 
 def partition(book, prefix, headers, rows: Iterable):
+    from openpyxl.utils import get_column_letter
+
     sheet = None
     count = 0
     last_column = get_column_letter(len(headers))
@@ -223,6 +223,8 @@ def metadata(registry):
 
 
 def create_workbook(staging, registry, destination):
+    from openpyxl import Workbook
+
     from .registry import open_review
 
     destination = Path(destination)
@@ -315,6 +317,8 @@ def create_workbook(staging, registry, destination):
 
 
 def workbook_reader(path):
+    from openpyxl import load_workbook
+
     with zipfile.ZipFile(path) as archive:
         infos = archive.infolist()
         if (

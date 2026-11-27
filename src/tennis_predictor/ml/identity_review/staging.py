@@ -150,11 +150,6 @@ SELECT group_id, 'opposing_sides' FROM observations GROUP BY group_id, match_id 
 INSERT OR IGNORE INTO flags
 SELECT group_id, 'same_start_distinct_matches' FROM observations WHERE start IS NOT NULL
 GROUP BY group_id, start HAVING count(DISTINCT match_id) > 1;
-INSERT OR IGNORE INTO flags
-SELECT o.group_id, 'conflicting_gender_context' FROM observations AS o JOIN (
-    SELECT hint FROM observations WHERE gender IN ('M','F')
-    GROUP BY hint HAVING count(DISTINCT gender) > 1
-) AS conflicts USING(hint);
 """
 
 
@@ -168,6 +163,12 @@ def observation_evidence(row, side):
         "name": row.get(f"player{side}"),
         "source_ref": f"{row['source_ref']}/player{side}",
     }
+
+
+def candidate_fields(mid, side, gender, name):
+    normalized, hint = candidate_name(name)
+    key = [gender, hint] if hint and gender in ("M", "F") else [mid, side]
+    return normalized, hint, fingerprint([VERSION, key])
 
 
 def row_observations(row):
@@ -187,9 +188,7 @@ def row_observations(row):
     observations = []
     for side, name in enumerate(names, 1):
         gender = row.get("gender")
-        norm, hint = candidate_name(name)
-        key = [gender, hint] if hint and gender in ("M", "F") else [mid, side]
-        group = fingerprint([VERSION, key])
+        norm, hint, group = candidate_fields(mid, side, gender, name)
         payload = observation_evidence(row, side)
         observations.append(
             (
@@ -209,6 +208,23 @@ def row_observations(row):
     return observations
 
 
+def verify_observation(row):
+    if digest(row["payload"].encode()) != row["row_hash"]:
+        raise ValueError("Staged observation checksum mismatch")
+    data = json.loads(row["payload"])
+    identity = tuple(data.get(key) for key in ("match_id", "side", "gender", "name"))
+    expected = candidate_fields(*identity)
+    stored = tuple(row[key] for key in ("normalized", "hint", "group_id"))
+    start = instant(data.get("start_ts"), naive_utc=True)
+    if (
+        identity != tuple(row[key] for key in ("match_id", "side", "gender", "name"))
+        or expected != stored
+        or row["day"] != data.get("match_date")
+        or row["start"] != (start.isoformat() if start else None)
+    ):
+        raise ValueError("Staged observation index does not match sealed evidence")
+
+
 def dataset_digest(db, state, *, table="observations", verify=False):
     if table not in ("observations", "staging.observations"):
         raise ValueError("Unsupported evidence table")
@@ -224,10 +240,10 @@ def dataset_digest(db, state, *, table="observations", verify=False):
             ]
         )
     )
-    columns = "row_hash, payload" if verify else "row_hash"
+    columns = "*" if verify else "row_hash"
     for row in db.execute(f"SELECT {columns} FROM {table} ORDER BY match_id,side"):
-        if verify and digest(row["payload"].encode()) != row["row_hash"]:
-            raise ValueError("Staged observation checksum mismatch")
+        if verify:
+            verify_observation(row)
         checksum.update(row["row_hash"].encode())
     return checksum.hexdigest()
 

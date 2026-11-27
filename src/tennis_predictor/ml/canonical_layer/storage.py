@@ -80,8 +80,8 @@ def copy_shard(previous, destination):
         os.link(previous / file, destination / file)
 
 
-def write_shard(path, bundle, config):
-    tables = MatchTransform(bundle, config).run()
+def write_shard(path, bundle, config, identity_bindings=None):
+    tables = MatchTransform(bundle, config, identity_bindings).run()
     path.mkdir(parents=True)
     files = {}
     for name, schema in SCHEMAS.items():
@@ -106,6 +106,7 @@ def write_shard(path, bundle, config):
         "match_local_winners": sum(
             r.get("winner_side") is not None for r in tables["match_results"]
         ),
+        "eligible_targets": sum(bool(r.get("target_eligible")) for r in tables["match_results"]),
         "targets": sum(r.get("target_p1_win") is not None for r in tables["match_results"]),
         "player_statuses": dict(Counter(r["resolution_status"] for r in tables["players"])),
         "quality": [
@@ -153,6 +154,7 @@ def quality_report(config, shards, outputs):
         "rows": {name: item["rows"] for name, item in outputs.items()},
         "candidates": sum(info["candidates"] for info in shards.values()),
         "match_local_winners": sum(info["match_local_winners"] for info in shards.values()),
+        "eligible_targets": sum(info["eligible_targets"] for info in shards.values()),
         "confirmed_results": sum(info["targets"] for info in shards.values()),
         "player_observations": dict(statuses),
         "quality": quality,
@@ -204,7 +206,7 @@ def update_pointer(root, version):
     return publication
 
 
-def build(adapter, output, config):
+def build(adapter, output, config, *, identities=None):
     if config.get("version") != VERSION or config.get("mode") not in MODES:
         raise ValueError("Unsupported canonical configuration")
     if config.get("prediction_cutoff") is not None and instant(config["prediction_cutoff"]) is None:
@@ -213,12 +215,10 @@ def build(adapter, output, config):
     mode_root.mkdir(parents=True, exist_ok=True)
     with (mode_root / ".build.lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        return build_locked(adapter, mode_root, config)
+        return build_locked(adapter, mode_root, config, identities)
 
 
-def build_locked(adapter, root, config):
-    entries = dict(sorted(adapter.entries()))
-    general = {k: v for k, v in config.items() if k != "reviews"}
+def transform_code_hash():
     ml = Path(__file__).parent.parent
     sources = (
         *Path(__file__).parent.glob("*.py"),
@@ -226,7 +226,13 @@ def build_locked(adapter, root, config):
         ml / "player_identity.py",
         ml.parent / "ingestion/nbbet/pbp_parsing.py",
     )
-    code_hash = fingerprint({p.name: checksum(p) for p in sources})
+    return fingerprint({p.name: checksum(p) for p in sources})
+
+
+def build_locked(adapter, root, config, identities):
+    entries = dict(sorted(adapter.entries()))
+    general = {k: v for k, v in config.items() if k != "reviews"}
+    code_hash = transform_code_hash()
     runtime = {
         "python": platform.python_version(),
         "unicode": unidata_version,
@@ -235,7 +241,16 @@ def build_locked(adapter, root, config):
         "arrow_package": pa.cpp_build_info.package_kind,
         "platform": [platform.system(), platform.machine()],
     }
+    bindings = (
+        {}
+        if identities is None
+        else {
+            mid: identities.resolve(*adapter.match_metadata(mid, sha))
+            for mid, sha in entries.items()
+        }
+    )
     inputs = {
+        "registry_token": identities.token if identities else None,
         "runtime": runtime,
         "transform": VERSION,
         "code_sha256": code_hash,
@@ -244,7 +259,13 @@ def build_locked(adapter, root, config):
             mid: {
                 "manifest_sha256": sha,
                 "transform_sha256": fingerprint(
-                    [code_hash, runtime, general, config.get("reviews", {}).get(mid)]
+                    [
+                        code_hash,
+                        runtime,
+                        general,
+                        config.get("reviews", {}).get(mid),
+                        bindings.get(mid),
+                    ]
                 ),
             }
             for mid, sha in entries.items()
@@ -290,7 +311,9 @@ def build_locked(adapter, root, config):
                 copy_shard(previous_folder / "shards" / mid, destination)
                 shards[mid] = previous[mid]
             else:
-                shards[mid] = write_shard(destination, adapter.load(mid, sha), config)
+                shards[mid] = write_shard(
+                    destination, adapter.load(mid, sha), config, bindings.get(mid)
+                )
         outputs = write_outputs(stage, entries)
         quality = quality_report(config, shards, outputs)
         (stage / "quality_report.json").write_bytes(encoded(quality))

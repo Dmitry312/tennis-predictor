@@ -25,12 +25,12 @@ jobs:
           uv sync --locked
           uv pip install PyYAML==6.0.2 cryptography==44.0.3
       - name: Lint canonical layer
-        run: .venv/bin/ruff check src/tennis_predictor/ml/canonical_layer scripts/build_canonical_layer.py tests/test_canonical_layer.py
+        run: .venv/bin/ruff check src/tennis_predictor/ml/canonical_layer scripts/build_canonical_layer.py tests/test_canonical_layer.py src/tennis_predictor/ml/aggregation scripts/build_match_data.py tests/test_match_data.py
       - name: Exercise dependency-free fake SSH transport
         run: /usr/bin/python3 -I -S tests/test_sample_diagnostics_stdlib.py
       - name: Build local Parquet and run offline regressions
         env:
           AWS_EC2_METADATA_DISABLED: 'true'
         run: |
-          .venv/bin/python scripts/build_canonical_layer.py
+          .venv/bin/python scripts/build_match_data.py
           PYTHONPATH=tests .venv/bin/python -m pytest -q -rs --ignore=tests/test_ml_quality_postgres_integration.py --ignore=tests/test_nbbet_surface_postgres.py --ignore=tests/test_sample_postgres16.py --ignore=tests/test_sample_diagnostics_stdlib.py
