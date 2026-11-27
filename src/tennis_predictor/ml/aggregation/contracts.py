@@ -29,6 +29,9 @@ KEY = [
     ("player_id", S),
     ("provisional_ref", S),
     ("identity_recorded_at", T),
+    ("registry_version", S),
+    ("identity_provenance", S),
+    ("match_quality_flags", pa.list_(pa.field("element", S))),
 ]
 SCHEMAS = {
     "match_sides": pa.schema(

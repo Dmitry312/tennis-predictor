@@ -50,6 +50,13 @@ class MatchAggregation:
             self.quality[key].append(row)
         self.metrics = []
         player_rows = {r["player_id"]: r for r in self.tables["players"]}
+        match_quality_flags = sorted(
+            {
+                row["reason"]
+                for row in self.tables["data_quality"]
+                if row["category"] == "match_quality"
+            }
+        )
         self.sides = {}
         for side in (1, 2):
             ref = self.match[f"player{side}_id"]
@@ -61,6 +68,11 @@ class MatchAggregation:
                 "player_id": ref if verified else None,
                 "provisional_ref": ref if not verified else None,
                 "identity_recorded_at": player_rows[ref].get("recorded_at") if verified else None,
+                "registry_version": player_rows[ref].get("registry_version") if verified else None,
+                "identity_provenance": player_rows[ref].get("identity_provenance")
+                if verified
+                else None,
+                "match_quality_flags": match_quality_flags,
             }
 
     def emit(

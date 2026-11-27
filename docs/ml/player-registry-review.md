@@ -172,3 +172,49 @@ the returned workbook for import.
 
 Until confirmed, these fields are supporting context or absent. They do not
 establish identity.
+
+## Issue #96 bulk owner import and consumers
+
+The original evidence is GitHub run 45866877459, artifact 15140813328. The importer
+pins artifact ZIP SHA-256 `11f62215eb8a8d4e9c3e26fefc26a17ce5248c88a8ee014e198e0a11034a41d7`
+and checks the staged dataset seal. Keep the large `evidence.sqlite` outside Git.
+Save it, if available, under `data/ml/identity-import/evidence.sqlite`. The default
+command can also download that exact artifact via an authenticated GitHub CLI.
+It never queries production.
+
+```bash
+uv run --locked python scripts/import_approved_registry.py
+uv run --locked python scripts/build_match_data.py --registry data/ml/identity-import/registry.sqlite
+```
+
+Save the owner's exact assignments as `data/ml/identity-import/approval.json`.
+The original packet requires arrays `initial_groups` (7,271 exact group IDs)
+and `alternative_groups` (232 exact group IDs). The arrays may overlap.
+The initial import generates opaque stable owner keys from that exact union.
+An optional `groups` mapping lets an owner-approved correction reuse keys. Integer totals or
+membership in the workbook alone do not identify which groups were approved.
+Also include `dataset`, `approval_ref`, actual offset-aware `recorded_at`,
+and `parent` (`root` initially, otherwise the previous token). Keep a key when
+the same approved person's source aliases change. A subsequent reviewed packet
+replaces the active bulk alias set; omitting an alias retires it, and previous
+revisions remain queryable. Equal aliases in different gender scopes remain
+separate. Cross-person contradictions quarantine the scoped alias. Opposing
+sides resolving to the same ID quarantine that match's bindings.
+
+Bulk provenance has its own approval and is kept as compact versioned alias
+rows in the existing SQLite registry rather than expanded match-by-match.
+An identical packet is idempotent. Unchanged aliases retain their evidence
+revision. The command writes a content-addressed approval manifest beside
+the registry in `registry-manifests`. Same-start overlaps from the evidence
+are match-quality flags and leave the player's ID intact. No additional
+spellings are introduced by fuzzy matching.
+
+Use `--registry-revision N` for explicitly pinned canonical and Match Data
+Store builds. Each run pins a revision before resolving any match. The
+canonical snapshot records the pin. Unchanged match mappings can reuse their
+shards after unrelated registry edits. Invalidations include displaced players
+and affected dates. Historical readings use the earlier-UTC-date convention.
+Live callers project one bundle with `aggregation.integration.live_match_input`
+and pass it to the existing `MatchDataStore.process` correction boundary.
+The store persists facts and quality flags. Longitudinal features remain
+on-demand. Durable publication to existing S3 requires separate approval.

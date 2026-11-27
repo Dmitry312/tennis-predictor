@@ -112,3 +112,9 @@ uv run --locked python scripts/build_match_data.py
 и формирует отчёт, сохраняя расчёт фактов неизменившихся матчей. Перед
 масштабированием нужны партиционирование индекса и политика хранения старых
 снимков. Исходные версии каталога должны оставаться доступны для аудита.
+
+The player registry can be pinned with `--registry` and `--registry-revision`
+when building the canonical layer and Match Data Store. Both carry the resolved
+ID, evidence revision and identity provenance. A same-start warning remains
+match quality evidence. [Bulk import and integration](player-registry-review.md)
+describes the input packet and the shared live projection.

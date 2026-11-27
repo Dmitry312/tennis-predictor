@@ -131,6 +131,13 @@ class CatalogAdapter:
             filename = source + ".json"
             read(directory / filename, manifest["files"][filename], decode=False)
 
+    def match_metadata(self, mid, expected):
+        manifest, directory = self.manifest(mid, expected)
+        data, _ = read(directory / "matches.json", manifest["files"]["matches.json"])
+        if data["match_id"] != mid or len(data["rows"]) != 1 or data["rows"][0]["match_id"] != mid:
+            raise ValueError("Invalid match metadata for registry resolution")
+        return data["rows"][0], f"samples/match_{mid}/matches.json#/rows/0"
+
     def load(self, mid, expected):
         manifest, directory = self.manifest(mid, expected)
         prefix = f"samples/match_{mid}"

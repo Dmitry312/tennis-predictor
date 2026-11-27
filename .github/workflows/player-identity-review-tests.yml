@@ -25,6 +25,6 @@ jobs:
           python -m pip install --disable-pip-version-check uv==0.13.9
           uv sync --locked --group review
       - run: |
-          .venv/bin/ruff check src/tennis_predictor/ml/identity_review scripts/{prepare,apply}_player_review.py scripts/export_live_player_review.py tests/test_identity_review.py
-          .venv/bin/python -m pytest -q tests/test_identity_review.py tests/test_canonical_player_identity.py
+          .venv/bin/ruff check src/tennis_predictor/ml/identity_review scripts/{prepare,apply}_player_review.py scripts/export_live_player_review.py scripts/import_approved_registry.py tests/test_identity_review.py tests/test_bulk_identity_integration.py
+          .venv/bin/python -m pytest -q tests/test_identity_review.py tests/test_canonical_player_identity.py tests/test_bulk_identity_integration.py
           .venv/bin/python scripts/prepare_player_review.py --output "$RUNNER_TEMP/identity-review"

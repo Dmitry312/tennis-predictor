@@ -55,6 +55,19 @@ CREATE TABLE IF NOT EXISTS alias_review (
     PRIMARY KEY(revision,match_id,side),
     FOREIGN KEY(revision,match_id,side) REFERENCES events(revision,match_id,side)
 );
+CREATE TABLE IF NOT EXISTS bulk_batches (
+    revision INTEGER PRIMARY KEY REFERENCES revisions, approval_ref TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS bulk_aliases (
+    revision INTEGER NOT NULL REFERENCES bulk_batches, source TEXT NOT NULL,
+    gender TEXT NOT NULL, normalized TEXT NOT NULL, player_id TEXT REFERENCES people(player_id),
+    evidence_revision INTEGER NOT NULL REFERENCES revisions,
+    PRIMARY KEY(revision,source,gender,normalized)
+);
+CREATE TABLE IF NOT EXISTS bulk_match_quality (
+    revision INTEGER NOT NULL REFERENCES bulk_batches, match_id TEXT NOT NULL,
+    PRIMARY KEY(revision,match_id)
+);
 CREATE TABLE IF NOT EXISTS current (
     match_id TEXT NOT NULL, side INTEGER NOT NULL, revision INTEGER NOT NULL,
     gender TEXT, normalized TEXT, row_hash TEXT NOT NULL, day TEXT,
@@ -351,20 +364,28 @@ def quarantine(reason):
 
 
 def alias_rule(db, *, gender, normalized, revision):
-    return list(
-        db.execute(
-            """
-        SELECT e.player_id, max(e.revision) AS evidence_revision,
-               max(CASE WHEN a.authority IN ('alias','group') THEN 1 ELSE 0 END) AS approved
-        FROM events e JOIN alias_review a USING(revision,match_id,side)
-        WHERE a.source='nbbet' AND e.gender=? AND e.normalized=? AND e.revision<=?
-          AND e.revision=(SELECT max(last.revision) FROM events last
-                          WHERE last.match_id=e.match_id AND last.side=e.side AND last.revision<=?)
-        GROUP BY e.player_id
-    """,
-            (gender, normalized, revision, revision),
+    rows = db.execute(
+        """
+        WITH observations AS (
+            SELECT e.player_id,e.revision,
+              CASE WHEN a.authority IN ('alias','group') THEN 1 ELSE 0 END AS approved,
+              0 AS bulk
+            FROM events e JOIN alias_review a USING(revision,match_id,side)
+            WHERE a.source='nbbet' AND e.gender=? AND e.normalized=? AND e.revision<=?
+              AND e.revision=(SELECT max(last.revision) FROM events last
+                WHERE last.match_id=e.match_id AND last.side=e.side AND last.revision<=?)
+            UNION ALL
+            SELECT player_id,evidence_revision,1,1 FROM bulk_aliases
+            WHERE source='nbbet' AND gender=? AND normalized=?
+              AND revision=(SELECT max(revision) FROM bulk_batches WHERE revision<=?)
         )
+        SELECT player_id, max(revision) AS evidence_revision, max(approved) AS approved,
+               max(bulk) AS bulk
+        FROM observations GROUP BY player_id
+    """,
+        (gender, normalized, revision, revision, gender, normalized, revision),
     )
+    return list(rows)
 
 
 class ReviewedMappings:
@@ -396,20 +417,34 @@ class ReviewedMappings:
             "reason": "missing_rejected_or_changed_evidence",
         }
 
+    def pin(self, revision=None):
+        with closing(connection(self.path)) as db:
+            if revision is None:
+                row = db.execute(
+                    "SELECT revision,token FROM revisions ORDER BY revision DESC LIMIT 1"
+                ).fetchone()
+            else:
+                row = db.execute(
+                    "SELECT revision,token FROM revisions WHERE revision=?", (revision,)
+                ).fetchone()
+        if row is None:
+            raise ValueError("Registry revision is missing or unknown")
+        return row["revision"], row["token"]
+
     def alias_candidates(self, gender, name):
         try:
             normalized = normalize_name(name)
         except IdentityError:
             return ()
         with closing(connection(self.path)) as db:
+            revision = db.execute("SELECT max(revision) FROM revisions").fetchone()[0]
             return tuple(
-                row[0]
-                for row in db.execute(
-                    """
-                SELECT DISTINCT player_id FROM current
-                WHERE gender=? AND normalized=? AND player_id IS NOT NULL ORDER BY player_id
-            """,
-                    (gender, normalized),
+                sorted(
+                    row["player_id"]
+                    for row in alias_rule(
+                        db, gender=gender, normalized=normalized, revision=revision
+                    )
+                    if row["player_id"] is not None
                 )
             )
 
@@ -445,7 +480,7 @@ class ReviewedMappings:
         evidence = fingerprint(observation_evidence(row, side))
         event = db.execute(
             """
-            SELECT e.player_id,e.row_hash,e.reason,e.revision,r.recorded_at
+            SELECT e.player_id,e.row_hash,e.reason,e.revision,r.recorded_at,r.token AS evidence_token
             FROM events e JOIN revisions r USING(revision)
             WHERE e.match_id=? AND e.side=? AND e.revision<=?
             ORDER BY e.revision DESC LIMIT 1
@@ -477,24 +512,39 @@ class ReviewedMappings:
             return quarantine("ambiguous_or_unapproved_alias" if candidates else "new_alias")
         candidate = candidates[0]
         start = observation_evidence(row, side)["start_ts"]
-        if (
-            start
-            and db.execute(
-                """
-            SELECT 1 FROM events e
-            WHERE e.player_id=? AND e.match_id!=? AND e.revision<=?
-              AND julianday(json_extract(e.evidence,'$.start_ts'))=julianday(?)
-              AND e.revision=(SELECT max(last.revision) FROM events last
-                  WHERE last.match_id=e.match_id AND last.side=e.side AND last.revision<=?)
-            LIMIT 1
+        overlap = db.execute(
+            """
+            SELECT 1 FROM bulk_match_quality WHERE match_id=? AND revision=(
+                SELECT max(revision) FROM bulk_batches WHERE revision<=?
+            )
         """,
+            (mid, pin["revision"]),
+        ).fetchone()
+        if not overlap and start:
+            overlap = db.execute(
+                """
+                SELECT 1 FROM events e
+                WHERE e.player_id=? AND e.match_id!=? AND e.revision<=?
+                  AND julianday(json_extract(e.evidence,'$.start_ts'))=julianday(?)
+                  AND e.revision=(SELECT max(last.revision) FROM events last
+                      WHERE last.match_id=e.match_id AND last.side=e.side AND last.revision<=?)
+                LIMIT 1
+            """,
                 (candidate["player_id"], mid, pin["revision"], start, pin["revision"]),
             ).fetchone()
-        ):
-            return quarantine("same_start_distinct_matches")
+        proof = db.execute(
+            "SELECT token,recorded_at,approval_ref FROM revisions LEFT JOIN bulk_batches USING(revision) WHERE revision=?",
+            (candidate["evidence_revision"],),
+        ).fetchone()
         return {
             "status": "rule_resolved",
-            "provenance": "owner_approved_exact_alias",
+            "provenance": "bulk_owner_policy"
+            if candidate["bulk"]
+            else "owner_approved_exact_alias",
+            "match_quality_flags": ["same_start_distinct_matches"] if overlap else [],
+            "evidence_token": proof["token"],
+            "recorded_at": proof["recorded_at"],
+            "bulk_approval_ref": proof["approval_ref"],
             "player_id": candidate["player_id"],
             "registry_revision": pin["revision"],
             "registry_token": pin["token"],
@@ -527,11 +577,23 @@ class ReviewedMappings:
                       AND a.match_id=old.match_id AND a.side=old.side
                     WHERE e.revision=?
                 )
-                SELECT source,gender,normalized FROM affected
-                WHERE source='nbbet' AND gender IS NOT NULL AND normalized IS NOT NULL
+                , before AS (
+                    SELECT source,gender,normalized,player_id FROM bulk_aliases
+                    WHERE revision=(SELECT max(revision) FROM bulk_batches WHERE revision<?)
+                      AND EXISTS (SELECT 1 FROM bulk_batches WHERE revision=?)
+                ), after AS (
+                    SELECT source,gender,normalized,player_id FROM bulk_aliases WHERE revision=?
+                ), bulk_delta AS (
+                    SELECT * FROM (SELECT * FROM after EXCEPT SELECT * FROM before)
+                    UNION
+                    SELECT * FROM (SELECT * FROM before EXCEPT SELECT * FROM after)
+                )
+                SELECT source,gender,normalized FROM (
+                  SELECT * FROM affected UNION SELECT source,gender,normalized FROM bulk_delta
+                ) WHERE source='nbbet' AND gender IS NOT NULL AND normalized IS NOT NULL
                 ORDER BY source,gender,normalized
             """,
-                    (revision, revision),
+                    (revision, revision, revision, revision, revision),
                 ),
             )
 

@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from tennis_predictor.ml.canonical_layer.contracts import MODES
 from tennis_predictor.ml.canonical_layer.evidence import encoded
+from tennis_predictor.ml.canonical_layer.identity import PinnedIdentities
 from tennis_predictor.ml.canonical_layer.source import CatalogAdapter
 from tennis_predictor.ml.canonical_layer.storage import build
 
@@ -23,13 +24,18 @@ def main():
     parser.add_argument("--mode", choices=MODES)
     parser.add_argument("--prediction-cutoff")
     parser.add_argument("--json", action="store_true", help="Print the current run report as JSON.")
+    parser.add_argument("--registry", type=Path)
+    parser.add_argument("--registry-revision", type=int)
     args = parser.parse_args()
+    if args.registry_revision is not None and args.registry is None:
+        parser.error("--registry-revision needs --registry")
+    identities = PinnedIdentities(args.registry, args.registry_revision) if args.registry else None
     config = json.loads(args.config.read_bytes())
     if args.mode:
         config["mode"] = args.mode
     if args.prediction_cutoff:
         config["prediction_cutoff"] = args.prediction_cutoff
-    report = build(CatalogAdapter(args.catalog), args.output, config)
+    report = build(CatalogAdapter(args.catalog), args.output, config, identities=identities)
     if args.json:
         sys.stdout.write(encoded(report).decode())
         return

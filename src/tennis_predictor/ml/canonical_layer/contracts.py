@@ -55,6 +55,7 @@ FIELDS = {
         ("display_name", S),
         ("resolution_status", S),
         ("registry_version", S),
+        ("identity_provenance", S),
     ],
     "player_aliases": [
         ("alias_id", S),
@@ -65,6 +66,7 @@ FIELDS = {
         ("normalized_name", S),
         ("source_player_id", S),
         ("registry_version", S),
+        ("identity_provenance", S),
     ],
     "tournaments": [
         ("tournament_id", S),

@@ -452,10 +452,9 @@ def test_new_match_resolves_only_approved_exact_alias(tmp_path):
         ]
         == "new_alias"
     )
-    assert (
-        api.resolve_match(match(3), source="nbbet", policy=policy)[0]["reason"]
-        == "same_start_distinct_matches"
-    )
+    assert api.resolve_match(match(3), source="nbbet", policy=policy)[0]["match_quality_flags"] == [
+        "same_start_distinct_matches"
+    ]
     other = {**new, "player2": "Иванов И."}
     assert all(
         r["reason"] == "opposing_sides"
