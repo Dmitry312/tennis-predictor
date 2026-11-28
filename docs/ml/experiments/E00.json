@@ -1,0 +1,172 @@
+{
+  "id": "E00",
+  "name": "Global Elo",
+  "status": "planned",
+  "hypothesis": "Evaluate chronological predictive quality on the identical result cohort.",
+  "chronological_splits": {
+    "warmup": 2021,
+    "train": [
+      2022,
+      2023
+    ],
+    "validation": [
+      2024,
+      2025
+    ],
+    "holdout": 2026
+  },
+  "config": {
+    "registered_defaults": {
+      "diffusion": 10,
+      "elo_k": 24,
+      "fast_k": 64,
+      "rd": 350,
+      "rd_cap": 350,
+      "shrink": 20,
+      "sigma": 0.06,
+      "surface_k": 24,
+      "tau": 0.5
+    },
+    "one_factor_variants": false
+  },
+  "real_catalog_smoke": {
+    "status": "run",
+    "snapshot": {
+      "baseline_code": "372088e912abbcb63cbc2b83aef320fee6f08d6d4be87f8299f0822ee29782b2",
+      "libraries": {
+        "catboost": "1.2.10",
+        "numpy": "2.5.3",
+        "scikit-learn": "1.7.2"
+      },
+      "rating_code": "9f8b828df076d94bc89c27a76326b86e88acd89ba5ea98626ce1a645fca68647",
+      "registry_revision": 1,
+      "registry_token": "5392e9555ef843bc1e1e9f44676c4a5d185fa65d2916b806d07750bca03c63d9",
+      "source_as_of": "2026-10-08T13:42:41.261345+00:00",
+      "source_fingerprint": "9fdd5ebc2493d20d68dab4b078e12d84d0dff8e4ff6e0b073bb25be14476e942",
+      "source_type": "catalog-smoke-v1"
+    },
+    "splits": {
+      "end_exclusive": "2026-01-01",
+      "holdout": "2026-01-01",
+      "train": "2021-01-01",
+      "validation": "2024-01-01",
+      "warmup": "2021-01-01"
+    },
+    "common_targets": 1,
+    "metrics": {
+      "elo": {
+        "all": {
+          "accuracy": 0.5,
+          "brier": 0.25,
+          "calibration": [
+            {
+              "bin": 5,
+              "mean_probability": 0.5,
+              "n": 1,
+              "win_rate": 1.0
+            }
+          ],
+          "candidates": 1,
+          "coverage": 1.0,
+          "log_loss": 0.6931471805599453,
+          "n": 1,
+          "roc_auc": null
+        },
+        "gender/M": {
+          "accuracy": 0.5,
+          "brier": 0.25,
+          "calibration": [
+            {
+              "bin": 5,
+              "mean_probability": 0.5,
+              "n": 1,
+              "win_rate": 1.0
+            }
+          ],
+          "candidates": 1,
+          "coverage": 1.0,
+          "log_loss": 0.6931471805599453,
+          "n": 1,
+          "roc_auc": null
+        },
+        "level/challenger": {
+          "accuracy": 0.5,
+          "brier": 0.25,
+          "calibration": [
+            {
+              "bin": 5,
+              "mean_probability": 0.5,
+              "n": 1,
+              "win_rate": 1.0
+            }
+          ],
+          "candidates": 1,
+          "coverage": 1.0,
+          "log_loss": 0.6931471805599453,
+          "n": 1,
+          "roc_auc": null
+        },
+        "surface/clay": {
+          "accuracy": 0.5,
+          "brier": 0.25,
+          "calibration": [
+            {
+              "bin": 5,
+              "mean_probability": 0.5,
+              "n": 1,
+              "win_rate": 1.0
+            }
+          ],
+          "candidates": 1,
+          "coverage": 1.0,
+          "log_loss": 0.6931471805599453,
+          "n": 1,
+          "roc_auc": null
+        },
+        "year/2024": {
+          "accuracy": 0.5,
+          "brier": 0.25,
+          "calibration": [
+            {
+              "bin": 5,
+              "mean_probability": 0.5,
+              "n": 1,
+              "win_rate": 1.0
+            }
+          ],
+          "candidates": 1,
+          "coverage": 1.0,
+          "log_loss": 0.6931471805599453,
+          "n": 1,
+          "roc_auc": null
+        }
+      }
+    },
+    "fold_counts": [
+      {
+        "from": "2024-01-01",
+        "scored": 1,
+        "train": 2,
+        "until_exclusive": "2025-01-01"
+      },
+      {
+        "from": "2025-01-01",
+        "scored": 0,
+        "train": 3,
+        "until_exclusive": "2026-01-01"
+      }
+    ],
+    "rating_version": "149289bf0b54d061760a87a569d50fb1cd05debe71470bd40a4cb57a177844dc",
+    "limitations": [
+      "Local fixture registry",
+      "One validation match and no 2025 target",
+      "Two real supervised training examples at first fold",
+      "2026 holdout untouched"
+    ]
+  },
+  "full_history": {
+    "status": "pending_protected_source_access",
+    "metrics": null,
+    "decision": null
+  }
+}

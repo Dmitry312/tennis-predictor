@@ -22,7 +22,7 @@ jobs:
       - name: Install locked dependencies and workflow-test extra
         run: |
           python -m pip install --disable-pip-version-check uv==0.13.9
-          uv sync --locked
+          uv sync --locked --group baseline
           uv pip install PyYAML==6.0.2 cryptography==44.0.3
       - name: Lint canonical layer
         run: .venv/bin/ruff check src/tennis_predictor/ml/canonical_layer scripts/build_canonical_layer.py tests/test_canonical_layer.py src/tennis_predictor/ml/aggregation scripts/build_match_data.py tests/test_match_data.py

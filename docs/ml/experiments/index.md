@@ -23,3 +23,20 @@ and credentials outside Git. Future ML work maintains these records and the
 | [D002](D002.json) | Compare uniform weighting and recency half-lives of 0.5, 1, 2, 3 or 5 years. | planned |
 
 These plans have no measurements or accepted outcomes.
+
+## Historical result baselines
+
+| ID | Experiment | Full-history status |
+| --- | --- | --- |
+| [E00](E00.json) | Default Global Elo | planned |
+| [E01](E01.json) | Five rating systems, bounded one-factor variants and warmup comparison | planned |
+| [E02](E02.json) | Logistic Regression | planned |
+| [E03](E03.json) | CatBoost | planned |
+
+These manifests preserve the completed real-catalog smoke and its limits.
+The [historical baseline protocol](../historical-baselines.md) governs full
+validation and the later holdout. No model or rating variant was accepted.
+
+- [E03A Logistic Regression optimization](E03A.md)
+- [E03B CatBoost optimization](E03B.md)
+- [E03C compact rating baselines](E03C.md)
