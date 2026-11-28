@@ -156,3 +156,31 @@ def test_past_only_validation_and_symmetric_models(tmp_path):
     for model in ("logistic", "catboost"):
         left, right = supervised(model, source[:-1], [row, reverse])
         assert left + right == pytest.approx(1)
+
+
+def test_readonly_details_transport_projects_only_result_evidence():
+    from io import BytesIO
+
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    from scripts.export_historical_baselines import DETAIL_FIELDS, details
+
+    key, etag = "nbbet_details/gender=M/level=tour/year=2023/a.parquet", '"etag"'
+    sample = detail(meta(1))
+    buffer = BytesIO()
+    pq.write_table(pa.Table.from_pylist([sample]), buffer)
+    raw = buffer.getvalue()
+
+    class Store:
+        def get_object(self, **kwargs):
+            assert kwargs == {"Bucket": "existing", "Key": key, "IfMatch": etag}
+            return {"ETag": etag, "Body": BytesIO(raw)}
+
+    output = BytesIO()
+    details(Store(), "existing", [(key, etag, len(raw))], output)
+    obj, rows = map(json.loads, output.getvalue().splitlines())
+    assert obj == {"object": [key, etag, len(raw)]}
+    assert rows == {"details": [{key: sample[key] for key in DETAIL_FIELDS}]}
+
+    with pytest.raises(ValueError, match="changed after inventory"):
+        details(Store(), "existing", [(key, etag, len(raw) + 1)], BytesIO())
