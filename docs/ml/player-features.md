@@ -28,7 +28,7 @@ days enter history together after the day finishes. Windows select the
 last 5, 10 or 15 distinct eligible matches, with same-day ties ordered
 by match ID. A match with missing statistics still occupies a position.
 Each metric exposes valid matches, missing matches, denominator, ratio
-of sums, observation-weighted mean of per-match ratios and population
+of sums, unweighted mean of per-match ratios and population
 standard deviation for at least two valid values. Window span is measured
 in UTC calendar days. Zero observations produce a missing value.
 No eager features are generated when a result is processed.
