@@ -1,0 +1,152 @@
+name: Historical baselines read-only evaluation
+on:
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: Validation, or explicitly open the held-out period
+        type: choice
+        options: [validation, holdout]
+        default: validation
+      validation_run:
+        description: Prior validation run ID, needed only for holdout or to reuse a frozen source
+        type: string
+        required: false
+  push:
+    branches: [ml-historical-baselines]
+    paths: ['.github/workflows/historical-baselines.yml']
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: production-historical-baselines-readonly
+  cancel-in-progress: false
+
+jobs:
+  evaluate:
+    if: github.repository == 'Dmitry312/tennis-predictor' && (github.ref == 'refs/heads/ML' || github.ref == 'refs/heads/ml-historical-baselines')
+    environment: player-identity-audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      PHASE: ${{ inputs.phase || 'validation' }}
+      VALIDATION_RUN: ${{ inputs.validation_run }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - run: |
+          set -euo pipefail
+          umask 077
+          ROOT="$RUNNER_TEMP/historical-baselines"
+          echo "ROOT=$ROOT" >> "$GITHUB_ENV"
+          mkdir "$ROOT" "$ROOT/report"
+          python -m pip install --disable-pip-version-check uv==0.13.9
+          uv sync --locked --group baseline
+      - name: Freeze bounded PostgreSQL metadata and result-only S3 evidence
+        if: env.VALIDATION_RUN == '' && env.PHASE == 'validation'
+        env:
+          SSH_HOST: ${{ secrets.SERVER_HOST }}
+          SSH_USER: ${{ secrets.SERVER_USER }}
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SSH_FINGERPRINT: ${{ secrets.SERVER_HOST_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          umask 077
+          [[ "$SSH_HOST" =~ ^[A-Za-z0-9][A-Za-z0-9.-]*$ ]]
+          [[ "$SSH_USER" =~ ^[a-z_][a-z0-9_-]*$ && -n "$SSH_KEY" ]]
+          [[ "$SSH_FINGERPRINT" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]]
+          work=$(mktemp -d "$RUNNER_TEMP/baselines-ssh.XXXXXX")
+          trap 'rm -rf -- "$work"' EXIT
+          timeout 15s ssh-keyscan -T 10 -p 22 -t ed25519 -- "$SSH_HOST" > "$work/candidate" 2>/dev/null
+          awk 'NF == 3 && $2 == "ssh-ed25519" { print; count++ }
+               END { if (count != 1) exit 1 }' "$work/candidate" > "$work/known_hosts"
+          [[ "$(ssh-keygen -lf "$work/known_hosts" -E sha256 | awk '{print $2}')" == "$SSH_FINGERPRINT" ]]
+          printf '%s\n' "$SSH_KEY" > "$work/key"
+          unset SSH_KEY
+          export PLAYER_REVIEW_SSH_DIR="$work"
+          BASELINE_SSH_COMMAND=$(cat <<'SH'
+          set -eu
+          umask 077
+          work=$(mktemp -d)
+          trap 'rm -rf -- "$work"' EXIT
+          tar -xf - -C "$work"
+          cd /root/Tennis_pelmen_model
+          timeout --kill-after=10s 1400s .venv/bin/python -B "$work/scripts/export_historical_baselines.py" --remote
+          SH
+          )
+          export BASELINE_SSH_COMMAND
+          git archive HEAD src scripts | .venv/bin/python scripts/export_historical_baselines.py "$ROOT/source"
+      - name: Restore the exact frozen validation source
+        if: env.VALIDATION_RUN != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASELINE_PASSPHRASE: ${{ secrets.BASELINE_SNAPSHOT_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          umask 077
+          [[ "$VALIDATION_RUN" =~ ^[0-9]+$ && -n "$BASELINE_PASSPHRASE" ]]
+          mkdir "$ROOT/source"
+          gh run download "$VALIDATION_RUN" --repo "$GITHUB_REPOSITORY" \
+            --name historical-baselines-frozen --dir "$ROOT/encrypted"
+          printf '%s\n' "$BASELINE_PASSPHRASE" |
+            gpg --batch --pinentry-mode loopback --passphrase-fd 0 --decrypt \
+              --output "$ROOT/frozen.tar.gz" "$ROOT/encrypted/frozen.tar.gz.gpg"
+          unset BASELINE_PASSPHRASE
+          tar -xzf "$ROOT/frozen.tar.gz" -C "$ROOT/source" --no-same-owner --no-same-permissions \
+            source.json metadata.jsonl details.jsonl registry.sqlite validation.json
+      - name: Evaluate the selected chronological period
+        env:
+          OPENBLAS_NUM_THREADS: '2'
+          OMP_NUM_THREADS: '2'
+        run: |
+          set -euo pipefail
+          flags=()
+          if [[ "$PHASE" == holdout ]]; then
+            [[ -n "$VALIDATION_RUN" ]]
+            flags+=(--held-out "$ROOT/source/validation.json")
+          fi
+          .venv/bin/python scripts/run_historical_baselines.py --source "$ROOT/source" \
+            --output "$ROOT/ratings" "${flags[@]}" > "$ROOT/report/$PHASE.json"
+          jq '{assessment, snapshot, common_targets,
+            results: (.runs.baseline | {
+              elo: .ratings.elo.all, glicko: .ratings.glicko.all,
+              logistic: .logistic.metrics.all, catboost: .catboost.metrics.all
+            }), waterfall: (.waterfall | {results, targets})}' \
+            "$ROOT/report/$PHASE.json" >> "$GITHUB_STEP_SUMMARY"
+      - name: Seal private validation inputs for explicit holdout
+        if: env.PHASE == 'validation'
+        env:
+          BASELINE_PASSPHRASE: ${{ secrets.BASELINE_SNAPSHOT_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          umask 077
+          if [[ -z "$BASELINE_PASSPHRASE" ]]; then
+            echo 'No snapshot encryption secret is configured. This validation run retains only aggregated metrics.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          cp "$ROOT/report/validation.json" "$ROOT/source/validation.json"
+          tar -czf "$ROOT/frozen.tar.gz" -C "$ROOT/source" \
+            source.json metadata.jsonl details.jsonl registry.sqlite validation.json
+          printf '%s\n' "$BASELINE_PASSPHRASE" |
+            gpg --batch --pinentry-mode loopback --passphrase-fd 0 --symmetric --cipher-algo AES256 \
+              --output "$ROOT/frozen.tar.gz.gpg" "$ROOT/frozen.tar.gz"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: historical-baselines-metrics-${{ env.PHASE }}
+          path: ${{ env.ROOT }}/report
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: env.PHASE == 'validation'
+        with:
+          name: historical-baselines-frozen
+          path: ${{ env.ROOT }}/frozen.tar.gz.gpg
+          if-no-files-found: ignore
+          retention-days: 7
+      - if: always()
+        run: rm -rf -- "$ROOT"

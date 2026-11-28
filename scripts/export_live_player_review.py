@@ -120,7 +120,7 @@ class LiveSource:
                 self.retries -= 1
 
 
-def ssh_start(payload):
+def ssh_start(payload, *, remote_command=REMOTE_COMMAND):
     private = Path(os.environ["PLAYER_REVIEW_SSH_DIR"])
     host, user = os.environ["SSH_HOST"], os.environ["SSH_USER"]
     args = [
@@ -170,7 +170,7 @@ def ssh_start(payload):
         user,
         "--",
         host,
-        REMOTE_COMMAND,
+        remote_command,
     ]
     process = subprocess.Popen(
         args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL

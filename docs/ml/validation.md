@@ -1,6 +1,8 @@
 # Validation protocol
 
-Use all eligible results since 2016 to warm up rating history. A later ML
+Use all eligible results since 2021-01-01 to warm up rating history.
+The first experimental splits and supervised baselines are documented in
+[Historical baselines](historical-baselines.md). A later ML
 training window changes dataset sampling, while rating warmup still uses
 earlier eligible history. Use rolling-origin validation on earlier periods
 and reserve one untouched final chronological holdout. Never choose settings
