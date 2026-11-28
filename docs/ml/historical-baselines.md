@@ -97,3 +97,12 @@ as rating facts. All models, including fitted Logistic Regression and
 CatBoost, produced 0.5 for the common target. Log loss was 0.693147, Brier
 0.25, accuracy with fractional ties 0.5, and AUC undefined. The smoke
 cannot rank the models. The registered holdout was not opened.
+
+### Protected full-history attempt
+
+[Run 46144803514](https://github.com/Dmitry312/tennis-predictor/actions/runs/46144803514)
+was denied by the existing branch policy of `player-identity-audit` before a
+runner started. The full source and validation metrics remain unavailable.
+An authorized reviewer can allow the PR ref temporarily and rerun that
+workflow under the existing review gate, or supply a frozen result bundle
+for offline validation. Neither option requires opening the holdout.
