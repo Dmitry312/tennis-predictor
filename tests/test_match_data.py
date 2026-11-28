@@ -263,3 +263,44 @@ def test_aggregation_counts_only_observed_points_and_completed_results(canonical
     tables["match_player_pbp"].append(points[0])
     rows = MatchAggregation(replace(match, tables=tables)).run()["metrics"]
     assert metric(rows, "observed_points_won", scope=1)["quality"] == "CONFLICT"
+
+
+def test_player_form_historical_live_parity_and_correction(canonical, tmp_path, monkeypatch):
+    from tennis_predictor.ml.player_features.engine import Features
+
+    match = input_match(canonical)
+    tables = deepcopy(match.tables)
+    day = tables["matches"][0]["match_date"]
+    day_after = day + timedelta(days=2)
+    proved = datetime.combine(day, datetime.min.time(), UTC) + timedelta(hours=20)
+    for player in tables["players"]:
+        player.update(resolution_status="verified", recorded_at=proved)
+    for name in ("match_results", "match_player_stats"):
+        for row in tables[name]:
+            row.update(available_at=proved, ingested_at=proved, recorded_at=proved)
+    match = replace(match, tables=tables, input_revision="form-proof")
+    player = tables["matches"][0]["player1_id"]
+    historical = tmp_path / "history"
+    build(Selection("form-test", match), historical)
+    reader = SnapshotReader(historical)
+    live = store.MatchDataStore(tmp_path / "live.sqlite")
+    activated = proved + timedelta(days=1)
+    monkeypatch.setattr(store, "clock", lambda: activated)
+    initial = live.process(match, live=True)
+    cutoff = activated + timedelta(hours=14)
+    old = Features(live.recent_feature_facts).get(initial, player, day_after, cutoff)
+    assert old == Features(reader.recent_feature_facts).get(
+        reader.version, player, day_after, cutoff
+    )
+    assert old[5]["matches"] == 1
+    assert not list(live.recent_feature_facts(player, day_after, activated))
+    changed = deepcopy(tables)
+    for item in changed["match_results"]:
+        item["winner_side"] = None
+    activated = cutoff
+    correction = live.process(
+        replace(match, input_revision="void", tables=changed), live=True, expected_previous=initial
+    )
+    assert correction != initial
+    assert not list(live.recent_feature_facts(player, day_after, cutoff + timedelta(seconds=1)))
+    assert list(live.recent_feature_facts(player, day_after, cutoff))

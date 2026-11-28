@@ -39,7 +39,7 @@ MAX_TOTAL_BYTES = 4 << 30
 MAX_DETAILS = 1_600_000
 
 
-STAGES = {"bootstrap", "imports", "registry", "postgres", "inventory", "details"}
+STAGES = {"bootstrap", "imports", "registry", "postgres", "inventory", "details", "stats"}
 ERRORS = {
     "ImportError",
     "ModuleNotFoundError",
@@ -101,11 +101,11 @@ def metadata(connect, stream, end=None):
     return as_of
 
 
-def inventory(client, bucket, as_of, end=None):
+def inventory(client, bucket, as_of, end=None, source="nbbet_details"):
     for gender in ("M", "F"):
         for level in ("tour", "challenger"):
             for year in range(START.year, min(as_of.year, end.year) + 1 if end else as_of.year + 1):
-                prefix = f"nbbet_details/gender={gender}/level={level}/year={year}/"
+                prefix = f"{source}/gender={gender}/level={level}/year={year}/"
                 pages = client.get_paginator("list_objects_v2").paginate(
                     Bucket=bucket, Prefix=prefix
                 )
@@ -115,9 +115,16 @@ def inventory(client, bucket, as_of, end=None):
                             yield item["Key"], item["ETag"], item["Size"]
 
 
-def details(client, bucket, objects, stream):
+def details(client, bucket, objects, stream, *, scope="details"):
     import pyarrow.parquet as pq
 
+    if scope == "details":
+        required = columns = DETAIL_FIELDS
+    else:
+        from tennis_predictor.ml.canonical_layer.contracts import METRICS
+
+        required = ("canonical_match_id", "scope", "fetched_at")
+        columns = (*required, *(f"{m}_p{s}" for m in METRICS for s in (1, 2)))
     seen = set()
     total_bytes = count = 0
     deadline = monotonic() + 1000
@@ -125,7 +132,7 @@ def details(client, bucket, objects, stream):
         total_bytes += size
         if (
             key in seen
-            or not key.startswith("nbbet_details/")
+            or not key.startswith(f"nbbet_{scope}/")
             or not 0 < size <= MAX_OBJECT_BYTES
             or total_bytes > MAX_TOTAL_BYTES
             or len(seen) >= MAX_OBJECTS
@@ -139,21 +146,24 @@ def details(client, bucket, objects, stream):
         if response.get("ETag") != etag or len(raw) != size:
             raise ValueError("Details object changed after inventory")
         parquet = pq.ParquetFile(BytesIO(raw))
-        if not set(DETAIL_FIELDS) <= set(parquet.schema_arrow.names):
+        if not set(required) <= set(parquet.schema_arrow.names):
             raise ValueError("Details object lacks expected result provenance")
         frame({"object": [key, etag, size]}, stream)
-        for batch in parquet.iter_batches(batch_size=PAGE, columns=DETAIL_FIELDS):
+        for batch in parquet.iter_batches(
+            batch_size=PAGE,
+            columns=[name for name in columns if name in parquet.schema_arrow.names],
+        ):
             count += batch.num_rows
             if count > MAX_DETAILS:
                 raise ValueError("Details row budget exceeded")
             frame(
-                {"details": [{k: iso(v) for k, v in row.items()} for row in batch.to_pylist()]},
+                {scope: [{k: iso(v) for k, v in row.items()} for row in batch.to_pylist()]},
                 stream,
             )
         sleep(0.03)
 
 
-def remote(stream, end=None):
+def remote(stream, end=None, *, with_stats=False):
     stage = "imports"
     frame({"stage": stage}, stream)
     try:
@@ -187,6 +197,15 @@ def remote(stream, end=None):
         stage = "details"
         frame({"stage": stage}, stream)
         details(client, bucket, objects, stream)
+        if with_stats:
+            stage = "stats"
+            frame({"stage": stage}, stream)
+            objects = sorted(
+                islice(inventory(client, bucket, as_of, end, "nbbet_stats"), MAX_OBJECTS + 1)
+            )
+            if len(objects) > MAX_OBJECTS:
+                raise ValueError("Statistics inventory exceeds object budget")
+            details(client, bucket, objects, stream, scope="stats")
         frame({"done": True}, stream)
         return 0
     except Exception as exc:  # noqa: BLE001 -- never forward a remote error message or raw rows
@@ -202,12 +221,14 @@ def exit_status(process):
         return "running"
 
 
-def receive(process, output, *, validation_only=False):
+def receive(process, output, *, validation_only=False, with_stats=False):
     files = {
         "metadata": "metadata.jsonl",
         "details": "details.jsonl",
         "registry_block": "registry.sqlite",
     }
+    if with_stats:
+        files["stats"] = "stats.jsonl"
     source = {}
     objects = []
     stage = "bootstrap"
@@ -216,6 +237,7 @@ def receive(process, output, *, validation_only=False):
         (output / files["metadata"]).open("xb") as meta,
         (output / files["details"]).open("xb") as detail,
         (output / files["registry_block"]).open("xb") as registry,
+        (output / "stats.jsonl").open("xb") if with_stats else open(os.devnull, "wb") as stats,
     ):
         while True:
             line = process.stdout.readline(MAX_FRAME + 1)
@@ -244,7 +266,7 @@ def receive(process, output, *, validation_only=False):
                 source[key] = value
             elif key == "object":
                 objects.append(value)
-                if len(objects) > MAX_OBJECTS:
+                if len(objects) > MAX_OBJECTS * (2 if with_stats else 1):
                     raise ValueError("Too many details objects")
             elif key == "registry_block":
                 block = base64.b64decode(value, validate=True)
@@ -252,12 +274,12 @@ def receive(process, output, *, validation_only=False):
                 if counts[key] > 128 << 20:
                     raise ValueError("Registry too large")
                 registry.write(block)
-            elif key in ("metadata", "details"):
+            elif key in ("metadata", "details") or (key == "stats" and with_stats):
                 counts[key] += len(value)
                 if counts[key] > (MAX_MATCHES if key == "metadata" else MAX_DETAILS):
                     raise ValueError("Too many input rows")
                 for row in value:
-                    frame(row, meta if key == "metadata" else detail)
+                    frame(row, {"metadata": meta, "details": detail, "stats": stats}[key])
             elif key == "done" and value is True:
                 break
             else:
@@ -292,10 +314,15 @@ def main():
     parser.add_argument("output", type=Path, nargs="?")
     parser.add_argument("--remote", action="store_true")
     parser.add_argument("--validation-only", action="store_true")
+    parser.add_argument("--with-stats", action="store_true")
     args = parser.parse_args()
     if args.remote:
         raise SystemExit(
-            remote(sys.stdout.buffer, date(2025, 12, 31) if args.validation_only else None)
+            remote(
+                sys.stdout.buffer,
+                date(2025, 12, 31) if args.validation_only else None,
+                with_stats=args.with_stats,
+            )
         )
     from scripts.export_live_player_review import ssh_start
 
@@ -307,7 +334,9 @@ def main():
         raise ValueError("Missing pinned source archive")
     process = ssh_start(payload, remote_command=os.environ["BASELINE_SSH_COMMAND"])
     try:
-        receive(process, args.output, validation_only=args.validation_only)
+        receive(
+            process, args.output, validation_only=args.validation_only, with_stats=args.with_stats
+        )
     finally:
         if process.poll() is None:
             process.kill()

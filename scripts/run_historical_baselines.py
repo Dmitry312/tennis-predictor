@@ -32,11 +32,12 @@ def lines(path):
             yield json.loads(line)
 
 
-def bundle(folder):
+def bundle(folder, *, with_stats=False):
     manifest = json.loads((folder / "source.json").read_bytes())
-    if manifest["format"] != "historical-source-v1" or set(manifest["files"]) != set(FILES):
+    expected = (*FILES, "stats.jsonl") if with_stats else FILES
+    if manifest["format"] != "historical-source-v1" or set(manifest["files"]) != set(expected):
         raise ValueError("Wrong source bundle format")
-    for name in FILES:
+    for name in expected:
         if checksum(folder / name) != manifest["files"][name]:
             raise ValueError(f"Corrupt frozen source file: {name}")
     pin = PinnedIdentities(folder / "registry.sqlite", manifest["registry_revision"])

@@ -40,3 +40,4 @@ validation and the later holdout. No model or rating variant was accepted.
 - [E03A Logistic Regression optimization](E03A.md)
 - [E03B CatBoost optimization](E03B.md)
 - [E03C compact rating baselines](E03C.md)
+- [E04 raw player form](../player-features.md)

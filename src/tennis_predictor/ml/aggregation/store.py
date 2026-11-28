@@ -195,3 +195,42 @@ class MatchDataStore:
                         "processed_at": processed_at,
                         "availability_policy": "live_processed",
                     }
+
+    def recent_feature_facts(self, player_id, prediction_date, as_of):
+        """Fetch active past revisions in one indexed query, with a bounded cutoff."""
+        from datetime import date
+
+        from tennis_predictor.ml.player_features.engine import observations
+
+        cutoff = utc_time(as_of)
+        prediction_date = min(prediction_date, cutoff.date())
+        with closing(self.connect()) as db:
+            entries = db.execute(
+                """
+                SELECT p.match_date, l.match_id, l.revision, r.metrics
+                FROM players p JOIN live l USING(revision) JOIN revisions r USING(revision)
+                WHERE p.player_id=? AND p.match_date<? AND l.sequence=(
+                    SELECT sequence FROM live previous
+                    WHERE previous.match_id=l.match_id AND previous.processed_at<?
+                    ORDER BY previous.processed_at DESC, previous.sequence DESC LIMIT 1
+                )
+                ORDER BY p.match_date DESC, l.match_id DESC
+                """,
+                (player_id, prediction_date.isoformat(), cutoff.isoformat()),
+            )
+            count = 0
+            for day, mid, revision, payload in entries:
+                rows = [
+                    row
+                    for row in unpack(payload)
+                    if row["identity_recorded_at"] is not None
+                    and row["identity_recorded_at"] < cutoff
+                    and row["available_at"] is not None
+                    and row["available_at"] < cutoff
+                ]
+                record = observations(rows, player_id, date.fromisoformat(day), revision, mid)
+                if record is not None:
+                    yield record
+                    count += 1
+                    if count == 15:
+                        break
