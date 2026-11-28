@@ -122,6 +122,36 @@ class SnapshotReader:
                         "availability_policy": "strict_observed" if cutoff else "historical_date",
                     }
 
+    def recent_feature_facts(self, player_id, prediction_date, observed_cutoff=None):
+        from tennis_predictor.ml.player_features.engine import observations
+
+        cutoff = utc_time(observed_cutoff) if observed_cutoff is not None else None
+        if cutoff is not None:
+            prediction_date = min(prediction_date, cutoff.date())
+        count = 0
+        for day, mid, _ in reversed(self.manifest["player_index"].get(player_id, [])):
+            parsed = date.fromisoformat(day)
+            if parsed >= prediction_date:
+                continue
+            rows = self.match(mid)["metrics"]
+            if cutoff is not None:
+                rows = [
+                    row
+                    for row in rows
+                    if row["identity_recorded_at"] is not None
+                    and row["identity_recorded_at"] < cutoff
+                    and row["available_at"] is not None
+                    and row["available_at"] < cutoff
+                ]
+            record = observations(
+                rows, player_id, parsed, self.manifest["matches"][mid]["revision"], mid
+            )
+            if record is not None:
+                yield record
+                count += 1
+                if count == 15:
+                    break
+
     def unique_target_day(self, player_id, prediction_date):
         """Future evaluation gate. Facts on a double-match day remain intact."""
         matches = {
