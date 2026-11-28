@@ -36,3 +36,6 @@ These plans have no measurements or accepted outcomes.
 These manifests preserve the completed real-catalog smoke and its limits.
 The [historical baseline protocol](../historical-baselines.md) governs full
 validation and the later holdout. No model or rating variant was accepted.
+
+- [E03A Logistic Regression optimization](E03A.md)
+- [E03B CatBoost optimization](E03B.md)

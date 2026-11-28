@@ -5,7 +5,7 @@ on:
       phase:
         description: Validation, or explicitly open the held-out period
         type: choice
-        options: [validation, holdout]
+        options: [validation, holdout, optimization]
         default: validation
       validation_run:
         description: Prior validation run ID, needed only for holdout or to reuse a frozen source
@@ -28,9 +28,9 @@ jobs:
     if: github.repository == 'Dmitry312/tennis-predictor' && (github.ref == 'refs/heads/ML' || github.ref == 'refs/heads/ml-historical-baselines')
     environment: player-identity-audit
     runs-on: ubuntu-24.04
-    timeout-minutes: 55
+    timeout-minutes: 110
     env:
-      PHASE: ${{ inputs.phase || 'validation' }}
+      PHASE: ${{ inputs.phase || 'optimization' }}
       VALIDATION_RUN: ${{ inputs.validation_run }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -48,7 +48,7 @@ jobs:
           python -m pip install --disable-pip-version-check uv==0.13.9
           uv sync --locked --group baseline
       - name: Freeze bounded PostgreSQL metadata and result-only S3 evidence
-        if: env.VALIDATION_RUN == '' && env.PHASE == 'validation'
+        if: env.VALIDATION_RUN == '' && env.PHASE != 'holdout'
         env:
           SSH_HOST: ${{ secrets.SERVER_HOST }}
           SSH_USER: ${{ secrets.SERVER_USER }}
@@ -69,6 +69,8 @@ jobs:
           printf '%s\n' "$SSH_KEY" > "$work/key"
           unset SSH_KEY
           export PLAYER_REVIEW_SSH_DIR="$work"
+          args=()
+          if [[ "$PHASE" == optimization ]]; then args+=(--validation-only); fi
           BASELINE_SSH_COMMAND=$(cat <<'SH'
           set -eu
           umask 077
@@ -80,8 +82,12 @@ jobs:
           timeout --kill-after=10s 1400s .venv/bin/python -B "$work/scripts/export_historical_baselines.py" --remote
           SH
           )
+          if [[ "$PHASE" == optimization ]]; then
+            BASELINE_SSH_COMMAND=${BASELINE_SSH_COMMAND/--remote/--remote --validation-only}
+          fi
           export BASELINE_SSH_COMMAND
-          git archive HEAD src scripts | .venv/bin/python scripts/export_historical_baselines.py "$ROOT/source"
+          git archive HEAD src scripts |
+            .venv/bin/python scripts/export_historical_baselines.py "$ROOT/source" "${args[@]}"
       - name: Restore the exact frozen validation source
         if: env.VALIDATION_RUN != ''
         env:
@@ -92,15 +98,19 @@ jobs:
           umask 077
           [[ "$VALIDATION_RUN" =~ ^[0-9]+$ && -n "$BASELINE_PASSPHRASE" ]]
           mkdir "$ROOT/source"
+          artifact=historical-baselines-frozen
+          if [[ "$PHASE" == optimization ]]; then artifact=rating-optimization-frozen-validation-source; fi
           gh run download "$VALIDATION_RUN" --repo "$GITHUB_REPOSITORY" \
-            --name historical-baselines-frozen --dir "$ROOT/encrypted"
+            --name "$artifact" --dir "$ROOT/encrypted"
           printf '%s\n' "$BASELINE_PASSPHRASE" |
             gpg --batch --pinentry-mode loopback --passphrase-fd 0 --decrypt \
               --output "$ROOT/frozen.tar.gz" "$ROOT/encrypted/frozen.tar.gz.gpg"
           unset BASELINE_PASSPHRASE
-          tar -xzf "$ROOT/frozen.tar.gz" -C "$ROOT/source" --no-same-owner --no-same-permissions \
-            source.json metadata.jsonl details.jsonl registry.sqlite validation.json
+          files=(source.json metadata.jsonl details.jsonl registry.sqlite)
+          if [[ "$PHASE" != optimization ]]; then files+=(validation.json); fi
+          tar -xzf "$ROOT/frozen.tar.gz" -C "$ROOT/source" --no-same-owner --no-same-permissions "${files[@]}"
       - name: Evaluate the selected chronological period
+        if: env.PHASE != 'optimization'
         env:
           OPENBLAS_NUM_THREADS: '2'
           OMP_NUM_THREADS: '2'
@@ -119,6 +129,61 @@ jobs:
               logistic: .logistic.metrics.all, catboost: .catboost.metrics.all
             }), waterfall: (.waterfall | {results, targets})}' \
             "$ROOT/report/$PHASE.json" >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve the reusable validation-only source
+        if: env.PHASE == 'optimization'
+        env:
+          BASELINE_PASSPHRASE: ${{ secrets.BASELINE_SNAPSHOT_PASSPHRASE }}
+          RECIPIENT_CERT: ${{ vars.SAMPLES_REVIEW_CERT_PEM }}
+          RECIPIENT_FINGERPRINT: ${{ vars.SAMPLES_REVIEW_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          if [[ -n "$BASELINE_PASSPHRASE" ]]; then
+            tar -czf "$ROOT/frozen.tar.gz" -C "$ROOT/source" \
+              source.json metadata.jsonl details.jsonl registry.sqlite
+            printf '%s\n' "$BASELINE_PASSPHRASE" |
+              gpg --batch --pinentry-mode loopback --passphrase-fd 0 --symmetric --cipher-algo AES256 \
+                --output "$ROOT/frozen.tar.gz.gpg" "$ROOT/frozen.tar.gz"
+          elif [[ -n "$RECIPIENT_CERT" && "$RECIPIENT_FINGERPRINT" =~ ^[a-f0-9]{64}$ ]]; then
+            printf '%s\n' "$RECIPIENT_CERT" > "$ROOT/recipient.pem"
+            actual=$(openssl x509 -in "$ROOT/recipient.pem" -outform DER | sha256sum | cut -d' ' -f1)
+            [[ "$actual" == "$RECIPIENT_FINGERPRINT" ]]
+            openssl x509 -in "$ROOT/recipient.pem" -checkend 604800 -noout >/dev/null
+            tar -czf "$ROOT/frozen.tar.gz" -C "$ROOT/source" \
+              source.json metadata.jsonl details.jsonl registry.sqlite
+            openssl cms -encrypt -aes-256-gcm -binary -outform DER \
+              -recip "$ROOT/recipient.pem" -keyopt rsa_padding_mode:oaep -keyopt rsa_oaep_md:sha256 \
+              -in "$ROOT/frozen.tar.gz" -out "$ROOT/frozen.tar.gz.cms"
+          else
+            echo 'Source retained for this run only. Configure an existing encrypted delivery recipient to reuse it later.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: env.PHASE == 'optimization'
+        with:
+          name: rating-optimization-frozen-validation-source
+          path: |
+            ${{ env.ROOT }}/frozen.tar.gz.gpg
+            ${{ env.ROOT }}/frozen.tar.gz.cms
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Run E03A before E03B on the frozen source
+        if: env.PHASE == 'optimization'
+        env:
+          OPENBLAS_NUM_THREADS: '2'
+          OMP_NUM_THREADS: '2'
+        run: |
+          set -euo pipefail
+          .venv/bin/python scripts/run_rating_optimization.py --source "$ROOT/source" \
+            --output "$ROOT/ratings" --reports "$ROOT/report"
+          {
+            echo '### E03A and E03B exploratory validation'
+            echo '```json'
+            jq -s '[.[] | {experiment, common_targets, selection, paired_uncertainty, seconds,
+              snapshot: .source.fingerprint,
+              log_loss: (.outer | with_entries(.value = .value.outer.all.log_loss))}]' \
+              "$ROOT/report/E03A.json" "$ROOT/report/E03B.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Seal private validation inputs for explicit holdout
         if: env.PHASE == 'validation'
         env:
@@ -137,10 +202,11 @@ jobs:
             gpg --batch --pinentry-mode loopback --passphrase-fd 0 --symmetric --cipher-algo AES256 \
               --output "$ROOT/frozen.tar.gz.gpg" "$ROOT/frozen.tar.gz"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
         with:
           name: historical-baselines-metrics-${{ env.PHASE }}
           path: ${{ env.ROOT }}/report
-          if-no-files-found: error
+          if-no-files-found: ignore
           retention-days: 14
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: env.PHASE == 'validation'

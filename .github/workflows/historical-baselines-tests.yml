@@ -6,6 +6,8 @@ on:
       - '.github/workflows/historical-baselines*.yml'
       - 'src/tennis_predictor/ml/**'
       - 'scripts/*historical_baselines.py'
+      - 'scripts/run_rating_optimization.py'
+      - 'tests/test_rating_optimization.py'
       - 'tests/test_historical_baselines.py'
       - 'uv.lock'
   push:
@@ -32,7 +34,7 @@ jobs:
           python -m pip install --disable-pip-version-check uv==0.13.9
           uv sync --locked --group baseline
       - run: |
-          .venv/bin/ruff check src/tennis_predictor/ml/baselines scripts/*historical_baselines.py tests/test_historical_baselines.py
-          .venv/bin/ruff format --check src/tennis_predictor/ml/baselines scripts/*historical_baselines.py tests/test_historical_baselines.py
-          .venv/bin/python -m pytest -q tests/test_historical_baselines.py tests/test_ratings.py
+          .venv/bin/ruff check src/tennis_predictor/ml/baselines scripts/*historical_baselines.py scripts/run_rating_optimization.py tests/test_historical_baselines.py tests/test_rating_optimization.py
+          .venv/bin/ruff format --check src/tennis_predictor/ml/baselines scripts/*historical_baselines.py scripts/run_rating_optimization.py tests/test_historical_baselines.py tests/test_rating_optimization.py
+          .venv/bin/python -m pytest -q tests/test_historical_baselines.py tests/test_rating_optimization.py tests/test_ratings.py
           .venv/bin/python scripts/run_historical_baselines.py --catalog docs/ml/data_catalog --output "$RUNNER_TEMP/catalog-baselines" > "$RUNNER_TEMP/catalog-results.json"

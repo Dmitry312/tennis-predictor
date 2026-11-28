@@ -8,7 +8,7 @@ import subprocess
 import sys
 import tempfile
 from contextlib import closing
-from datetime import UTC
+from datetime import UTC, date
 from hashlib import file_digest
 from io import BytesIO
 from itertools import islice
@@ -65,7 +65,7 @@ def checksum(path):
         return file_digest(stream, "sha256").hexdigest()
 
 
-def metadata(connect, stream):
+def metadata(connect, stream, end=None):
     """One read-only repeatable-read cursor, with time and row bounds."""
     deadline = monotonic() + 300
     with closing(connect()) as db:
@@ -83,7 +83,7 @@ def metadata(connect, stream):
                 query.execute(
                     f"SELECT {columns} FROM public.matches "
                     "WHERE match_date >= %s AND match_date <= %s ORDER BY match_id LIMIT %s",
-                    (START, as_of.date(), MAX_MATCHES + 1),
+                    (START, min(as_of.date(), end) if end else as_of.date(), MAX_MATCHES + 1),
                 )
                 count = 0
                 while rows := query.fetchmany(PAGE):
@@ -101,10 +101,10 @@ def metadata(connect, stream):
     return as_of
 
 
-def inventory(client, bucket, as_of):
+def inventory(client, bucket, as_of, end=None):
     for gender in ("M", "F"):
         for level in ("tour", "challenger"):
-            for year in range(START.year, as_of.year + 1):
+            for year in range(START.year, min(as_of.year, end.year) + 1 if end else as_of.year + 1):
                 prefix = f"nbbet_details/gender={gender}/level={level}/year={year}/"
                 pages = client.get_paginator("list_objects_v2").paginate(
                     Bucket=bucket, Prefix=prefix
@@ -153,7 +153,7 @@ def details(client, bucket, objects, stream):
         sleep(0.03)
 
 
-def remote(stream):
+def remote(stream, end=None):
     stage = "imports"
     frame({"stage": stage}, stream)
     try:
@@ -178,10 +178,10 @@ def remote(stream):
         stage = "postgres"
         frame({"stage": stage}, stream)
         connect, _ = connection_factory()
-        as_of = metadata(connect, stream)
+        as_of = metadata(connect, stream, end)
         stage = "inventory"
         frame({"stage": stage}, stream)
-        objects = sorted(islice(inventory(client, bucket, as_of), MAX_OBJECTS + 1))
+        objects = sorted(islice(inventory(client, bucket, as_of, end), MAX_OBJECTS + 1))
         if len(objects) > MAX_OBJECTS:
             raise ValueError("Details inventory exceeds object budget")
         stage = "details"
@@ -202,7 +202,7 @@ def exit_status(process):
         return "running"
 
 
-def receive(process, output):
+def receive(process, output, *, validation_only=False):
     files = {
         "metadata": "metadata.jsonl",
         "details": "details.jsonl",
@@ -272,6 +272,7 @@ def receive(process, output):
         encoded(
             {
                 "format": "historical-source-v1",
+                "period": "validation-only" if validation_only else "all",
                 "export_code": checksum(Path(__file__)),
                 "as_of": source["postgres"]["as_of"],
                 "postgres_snapshot": source["postgres"]["transaction"],
@@ -290,9 +291,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output", type=Path, nargs="?")
     parser.add_argument("--remote", action="store_true")
+    parser.add_argument("--validation-only", action="store_true")
     args = parser.parse_args()
     if args.remote:
-        raise SystemExit(remote(sys.stdout.buffer))
+        raise SystemExit(
+            remote(sys.stdout.buffer, date(2025, 12, 31) if args.validation_only else None)
+        )
     from scripts.export_live_player_review import ssh_start
 
     if args.output is None:
@@ -303,7 +307,7 @@ def main():
         raise ValueError("Missing pinned source archive")
     process = ssh_start(payload, remote_command=os.environ["BASELINE_SSH_COMMAND"])
     try:
-        receive(process, args.output)
+        receive(process, args.output, validation_only=args.validation_only)
     finally:
         if process.poll() is None:
             process.kill()
