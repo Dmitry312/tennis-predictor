@@ -1,0 +1,33 @@
+{
+  "status": "accepted_research_baselines",
+  "run": 46164507154,
+  "artifact": 15271159559,
+  "archive_sha256": "f0f7bb7ab6479c0198c2750a040ebf9f52e2e96abf1858fa868ccc250250f5dc",
+  "source_fingerprint": "3ec596a56e8c54ece298b3a132da53f3b741c04e1587e2c7eb1a8a92956b7957",
+  "common_validation_targets": 35441,
+  "holdout_opened": false,
+  "models": {
+    "logistic": {
+      "candidate": "no-context",
+      "features": 14,
+      "log_loss": 0.6155399814,
+      "reference_log_loss": 0.6153430334,
+      "delta": 0.000196948,
+      "day_bootstrap_95pct": [0.0000301, 0.0003568],
+      "C": 1.0,
+      "penalty": "l2"
+    },
+    "catboost": {
+      "candidate": "joint",
+      "features": 9,
+      "log_loss": 0.6177680519,
+      "reference_log_loss": 0.6178306909,
+      "delta": -0.000062639,
+      "day_bootstrap_95pct": [-0.0005557, 0.0004312],
+      "depth": 3,
+      "iterations": 200,
+      "learning_rate": 0.03,
+      "owner_selected_sensitivity_tolerance": 0.001
+    }
+  }
+}
