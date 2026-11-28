@@ -5,7 +5,7 @@ on:
       phase:
         description: Validation, or explicitly open the held-out period
         type: choice
-        options: [validation, holdout, optimization]
+        options: [validation, holdout, optimization, compact]
         default: validation
       validation_run:
         description: Prior validation run ID, needed only for holdout or to reuse a frozen source
@@ -30,7 +30,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 110
     env:
-      PHASE: ${{ inputs.phase || 'optimization' }}
+      PHASE: ${{ inputs.phase || 'compact' }}
       VALIDATION_RUN: ${{ inputs.validation_run }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -70,7 +70,7 @@ jobs:
           unset SSH_KEY
           export PLAYER_REVIEW_SSH_DIR="$work"
           args=()
-          if [[ "$PHASE" == optimization ]]; then args+=(--validation-only); fi
+          if [[ "$PHASE" == optimization || "$PHASE" == compact ]]; then args+=(--validation-only); fi
           BASELINE_SSH_COMMAND=$(cat <<'SH'
           set -eu
           umask 077
@@ -82,7 +82,7 @@ jobs:
           timeout --kill-after=10s 1400s .venv/bin/python -B "$work/scripts/export_historical_baselines.py" --remote
           SH
           )
-          if [[ "$PHASE" == optimization ]]; then
+          if [[ "$PHASE" == optimization || "$PHASE" == compact ]]; then
             BASELINE_SSH_COMMAND=${BASELINE_SSH_COMMAND/--remote/--remote --validation-only}
           fi
           export BASELINE_SSH_COMMAND
@@ -99,7 +99,7 @@ jobs:
           [[ "$VALIDATION_RUN" =~ ^[0-9]+$ && -n "$BASELINE_PASSPHRASE" ]]
           mkdir "$ROOT/source"
           artifact=historical-baselines-frozen
-          if [[ "$PHASE" == optimization ]]; then artifact=rating-optimization-frozen-validation-source; fi
+          if [[ "$PHASE" == optimization || "$PHASE" == compact ]]; then artifact=rating-optimization-frozen-validation-source; fi
           gh run download "$VALIDATION_RUN" --repo "$GITHUB_REPOSITORY" \
             --name "$artifact" --dir "$ROOT/encrypted"
           printf '%s\n' "$BASELINE_PASSPHRASE" |
@@ -107,10 +107,10 @@ jobs:
               --output "$ROOT/frozen.tar.gz" "$ROOT/encrypted/frozen.tar.gz.gpg"
           unset BASELINE_PASSPHRASE
           files=(source.json metadata.jsonl details.jsonl registry.sqlite)
-          if [[ "$PHASE" != optimization ]]; then files+=(validation.json); fi
+          if [[ "$PHASE" != optimization && "$PHASE" != compact ]]; then files+=(validation.json); fi
           tar -xzf "$ROOT/frozen.tar.gz" -C "$ROOT/source" --no-same-owner --no-same-permissions "${files[@]}"
       - name: Evaluate the selected chronological period
-        if: env.PHASE != 'optimization'
+        if: env.PHASE == 'validation' || env.PHASE == 'holdout'
         env:
           OPENBLAS_NUM_THREADS: '2'
           OMP_NUM_THREADS: '2'
@@ -130,7 +130,7 @@ jobs:
             }), waterfall: (.waterfall | {results, targets})}' \
             "$ROOT/report/$PHASE.json" >> "$GITHUB_STEP_SUMMARY"
       - name: Preserve the reusable validation-only source
-        if: env.PHASE == 'optimization'
+        if: env.PHASE == 'optimization' || env.PHASE == 'compact'
         env:
           BASELINE_PASSPHRASE: ${{ secrets.BASELINE_SNAPSHOT_PASSPHRASE }}
           RECIPIENT_CERT: ${{ vars.SAMPLES_REVIEW_CERT_PEM }}
@@ -158,7 +158,7 @@ jobs:
             echo 'Source retained for this run only. Configure an existing encrypted delivery recipient to reuse it later.' >> "$GITHUB_STEP_SUMMARY"
           fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        if: env.PHASE == 'optimization'
+        if: env.PHASE == 'optimization' || env.PHASE == 'compact'
         with:
           name: rating-optimization-frozen-validation-source
           path: |
@@ -182,6 +182,28 @@ jobs:
               snapshot: .source.fingerprint,
               log_loss: (.outer | with_entries(.value = .value.outer.all.log_loss))}]' \
               "$ROOT/report/E03A.json" "$ROOT/report/E03B.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Run the E03C compact validation
+        if: env.PHASE == 'compact'
+        env:
+          OPENBLAS_NUM_THREADS: '2'
+          OMP_NUM_THREADS: '2'
+        run: |
+          set -euo pipefail
+          .venv/bin/python scripts/run_rating_optimization.py --compact --source "$ROOT/source" \
+            --output "$ROOT/ratings" --reports "$ROOT/report"
+          jq '{experiment, common_targets, source_fingerprint: .source.fingerprint,
+            tolerances, families: (.families | map_values({selected, sensitivity,
+              results: (.outer | map_values({log_loss: .metrics.all.log_loss,
+                brier: .metrics.all.brier, auc: .metrics.all.roc_auc, accuracy: .metrics.all.accuracy,
+                by_year: (.metrics | with_entries(select(.key | startswith("year/"))) |
+                  map_values(.log_loss)), delta: .versus_reference}))}))}' \
+            "$ROOT/report/E03C.json" | tee "$ROOT/compact-summary.json"
+          {
+            echo '### E03C compact validation'
+            echo '```json'
+            cat "$ROOT/compact-summary.json"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Seal private validation inputs for explicit holdout

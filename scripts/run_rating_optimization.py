@@ -10,6 +10,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from scripts.run_historical_baselines import MODULES, bundle
 
+from tennis_predictor.ml.baselines import parsimony
 from tennis_predictor.ml.baselines.evaluation import HOLDOUT
 from tennis_predictor.ml.baselines.optimization import optimize
 from tennis_predictor.ml.baselines.projection import project
@@ -23,10 +24,11 @@ def main():
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--reports", type=Path, required=True)
+    parser.add_argument("--compact", action="store_true", help="Run only E03C")
     args = parser.parse_args()
     metadata, details, registry, as_of, manifest = bundle(args.source)
     if manifest.get("period") != "validation-only":
-        raise ValueError("E03A/E03B require a source restricted to 2021–2025")
+        raise ValueError("The rating experiments require a source restricted to 2021–2025")
     meta = (
         row
         for row in metadata
@@ -48,7 +50,10 @@ def main():
         temp.write_bytes(encoded({**result, "waterfall": waterfall}))
         temp.replace(path)
 
-    optimize(matches, source, args.output, save)
+    if args.compact:
+        save("E03C", parsimony.run(matches, source, args.output))
+    else:
+        optimize(matches, source, args.output, save)
 
 
 if __name__ == "__main__":
