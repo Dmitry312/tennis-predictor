@@ -10,7 +10,8 @@ from tennis_predictor.ml.canonical_layer.transform import completed_set_winner
 from tennis_predictor.ml.canonical_match import ContractError
 from tennis_predictor.ml.ratings.inputs import SURFACES, Match
 
-START = date(2021, 1, 1)
+from . import START
+
 EXCLUDED = re.compile(
     r"\b(?:itf|davis\s+cup|billie\s+jean\s+king\s+cup|bjk\s+cup|fed\s+cup|"
     r"federation\s+cup|asian\s+games|exhibitions?|doubles)\b"

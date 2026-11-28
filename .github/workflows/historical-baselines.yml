@@ -72,6 +72,7 @@ jobs:
           BASELINE_SSH_COMMAND=$(cat <<'SH'
           set -eu
           umask 077
+          printf '%s\n' '{"stage":"bootstrap"}'
           work=$(mktemp -d)
           trap 'rm -rf -- "$work"' EXIT
           tar -xf - -C "$work"

@@ -4,27 +4,23 @@ import argparse
 import base64
 import json
 import os
+import subprocess
 import sys
 import tempfile
 from contextlib import closing
 from datetime import UTC
+from hashlib import file_digest
 from io import BytesIO
 from itertools import islice
 from pathlib import Path
 from time import monotonic, sleep
 
-import pyarrow.parquet as pq
-
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
-from scripts.export_live_player_review import ssh_start
-
-from tennis_predictor.config import get_settings
-from tennis_predictor.ml.baselines.projection import START
+from tennis_predictor.ml.baselines import START
 from tennis_predictor.ml.canonical_layer.evidence import encoded, fingerprint
-from tennis_predictor.ml.canonical_layer.storage import checksum
 from tennis_predictor.ml.identity_review.pg_export import (
     FIELDS,
     MAX_FRAME,
@@ -32,8 +28,6 @@ from tennis_predictor.ml.identity_review.pg_export import (
     frame,
     iso,
 )
-from tennis_predictor.ml.identity_review.publication import RegistryPublication
-from tennis_predictor.storage.s3_client import get_s3_client
 
 DETAIL_FIELDS = ("canonical_match_id", "nbbet_match_id", "status", "sets_json", "fetched_at")
 META_FIELDS = (*FIELDS, "surface")
@@ -43,6 +37,32 @@ MAX_OBJECTS = 12_000
 MAX_OBJECT_BYTES = 32 << 20
 MAX_TOTAL_BYTES = 4 << 30
 MAX_DETAILS = 1_600_000
+
+
+STAGES = {"bootstrap", "imports", "registry", "postgres", "inventory", "details"}
+ERRORS = {
+    "ImportError",
+    "ModuleNotFoundError",
+    "ClientError",
+    "OperationalError",
+    "ProgrammingError",
+    "QueryCanceled",
+    "UndefinedColumn",
+    "ArrowInvalid",
+    "ValueError",
+    "OSError",
+    "FileNotFoundError",
+    "PermissionError",
+    "TimeoutError",
+    "EndpointConnectionError",
+    "ConnectTimeoutError",
+    "ReadTimeoutError",
+}
+
+
+def checksum(path):
+    with path.open("rb") as stream:
+        return file_digest(stream, "sha256").hexdigest()
 
 
 def metadata(connect, stream):
@@ -96,6 +116,8 @@ def inventory(client, bucket, as_of):
 
 
 def details(client, bucket, objects, stream):
+    import pyarrow.parquet as pq
+
     seen = set()
     total_bytes = count = 0
     deadline = monotonic() + 1000
@@ -131,32 +153,53 @@ def details(client, bucket, objects, stream):
         sleep(0.03)
 
 
-def remote():
-    stream = sys.stdout.buffer
-    client, bucket = get_s3_client(), get_settings().s3_bucket
-    with tempfile.TemporaryDirectory() as temp:
-        path = Path(temp) / "registry.sqlite"
-        pin = RegistryPublication(client, bucket).fetch(path)
-        frame(
-            {
-                "registry": {
-                    "token": pin["token"],
-                    "revision": pin["revision"],
-                    "sha256": pin["sha256"],
-                }
-            },
-            stream,
-        )
-        with path.open("rb") as registry:
-            while block := registry.read(256 << 10):
-                frame({"registry_block": base64.b64encode(block).decode()}, stream)
-    connect, _ = connection_factory()
-    as_of = metadata(connect, stream)
-    objects = sorted(islice(inventory(client, bucket, as_of), MAX_OBJECTS + 1))
-    if len(objects) > MAX_OBJECTS:
-        raise ValueError("Details inventory exceeds object budget")
-    details(client, bucket, objects, stream)
-    frame({"done": True}, stream)
+def remote(stream):
+    stage = "imports"
+    frame({"stage": stage}, stream)
+    try:
+        import psycopg2  # noqa: F401 -- verify the remote PostgreSQL runtime before reading
+        import pyarrow.parquet  # noqa: F401 -- verify the remote Parquet runtime before reading
+        from dotenv import dotenv_values  # noqa: F401 -- used by the connection factory
+
+        from tennis_predictor.config import get_settings
+        from tennis_predictor.ml.identity_review.publication import RegistryPublication
+        from tennis_predictor.storage.s3_client import get_s3_client
+
+        stage = "registry"
+        frame({"stage": stage}, stream)
+        client, bucket = get_s3_client(), get_settings().s3_bucket
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "registry.sqlite"
+            pin = RegistryPublication(client, bucket).fetch(path)
+            frame({"registry": {key: pin[key] for key in ("token", "revision", "sha256")}}, stream)
+            with path.open("rb") as registry:
+                while block := registry.read(256 << 10):
+                    frame({"registry_block": base64.b64encode(block).decode()}, stream)
+        stage = "postgres"
+        frame({"stage": stage}, stream)
+        connect, _ = connection_factory()
+        as_of = metadata(connect, stream)
+        stage = "inventory"
+        frame({"stage": stage}, stream)
+        objects = sorted(islice(inventory(client, bucket, as_of), MAX_OBJECTS + 1))
+        if len(objects) > MAX_OBJECTS:
+            raise ValueError("Details inventory exceeds object budget")
+        stage = "details"
+        frame({"stage": stage}, stream)
+        details(client, bucket, objects, stream)
+        frame({"done": True}, stream)
+        return 0
+    except Exception as exc:  # noqa: BLE001 -- never forward a remote error message or raw rows
+        name = type(exc).__name__
+        frame({"error": name if name in ERRORS else "OtherError"}, stream)
+        return 1
+
+
+def exit_status(process):
+    try:
+        return str(process.wait(timeout=15))
+    except subprocess.TimeoutExpired:
+        return "running"
 
 
 def receive(process, output):
@@ -167,6 +210,7 @@ def receive(process, output):
     }
     source = {}
     objects = []
+    stage = "bootstrap"
     counts = dict.fromkeys(files, 0)
     with (
         (output / files["metadata"]).open("xb") as meta,
@@ -175,11 +219,26 @@ def receive(process, output):
     ):
         while True:
             line = process.stdout.readline(MAX_FRAME + 1)
-            if not line.endswith(b"\n") or len(line) > MAX_FRAME:
-                raise ValueError("Missing or oversized remote export frame")
-            message = json.loads(line)
-            ((key, value),) = message.items()
-            if key in ("registry", "postgres"):
+            if not line:
+                raise ValueError(f"Remote export EOF at {stage}; exit={exit_status(process)}")
+            if len(line) > MAX_FRAME:
+                raise ValueError(f"Oversized remote export frame at {stage}")
+            if not line.endswith(b"\n"):
+                raise ValueError(
+                    f"Truncated remote export frame at {stage}; exit={exit_status(process)}"
+                )
+            try:
+                message = json.loads(line)
+                ((key, value),) = message.items()
+            except (ValueError, AttributeError):
+                raise ValueError(f"Invalid remote export frame at {stage}") from None
+            if key == "stage" and isinstance(value, str) and value in STAGES:
+                stage = value
+            elif key == "error" and isinstance(value, str) and value in ERRORS | {"OtherError"}:
+                raise ValueError(
+                    f"Remote export failed at {stage}: {value}; exit={exit_status(process)}"
+                )
+            elif key in ("registry", "postgres"):
                 if key in source:
                     raise ValueError("Repeated source pin")
                 source[key] = value
@@ -198,17 +257,14 @@ def receive(process, output):
                 if counts[key] > (MAX_MATCHES if key == "metadata" else MAX_DETAILS):
                     raise ValueError("Too many input rows")
                 for row in value:
-                    (meta if key == "metadata" else detail).write(encoded(row))
+                    frame(row, meta if key == "metadata" else detail)
             elif key == "done" and value is True:
                 break
             else:
                 raise ValueError("Invalid remote export frame")
-    if (
-        process.wait(timeout=30)
-        or set(source) != {"registry", "postgres"}
-        or not all(counts.values())
-    ):
-        raise ValueError("Incomplete source export")
+    status = exit_status(process)
+    if status != "0" or set(source) != {"registry", "postgres"} or not all(counts.values()):
+        raise ValueError(f"Incomplete source export at {stage}; exit={status}")
     checksums = {name: checksum(output / name) for name in files.values()}
     if checksums["registry.sqlite"] != source["registry"]["sha256"]:
         raise ValueError("Registry changed in transit")
@@ -236,11 +292,9 @@ def main():
     parser.add_argument("--remote", action="store_true")
     args = parser.parse_args()
     if args.remote:
-        try:
-            remote()
-        except Exception:  # noqa: BLE001 -- never forward server environment, credentials or raw rows on error
-            raise SystemExit("historical_readonly_export_failed") from None
-        return
+        raise SystemExit(remote(sys.stdout.buffer))
+    from scripts.export_live_player_review import ssh_start
+
     if args.output is None:
         parser.error("Output directory required")
     args.output.mkdir(mode=0o700, parents=True, exist_ok=False)

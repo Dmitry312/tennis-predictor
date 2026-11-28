@@ -184,3 +184,85 @@ def test_readonly_details_transport_projects_only_result_evidence():
 
     with pytest.raises(ValueError, match="changed after inventory"):
         details(Store(), "existing", [(key, etag, len(raw) + 1)], BytesIO())
+
+
+def test_historical_export_archive_imports_without_infra_or_ml_dependencies(tmp_path):
+    import os
+    import shutil
+    import subprocess
+    import sys
+
+    root = Path(__file__).resolve().parents[1]
+    (tmp_path / "scripts").mkdir()
+    shutil.copy(root / "scripts/export_historical_baselines.py", tmp_path / "scripts")
+    shutil.copytree(root / "src", tmp_path / "src")
+    # Use the workflow archive layout and a stdlib-only interpreter.
+    run = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-S",
+            str(tmp_path / "scripts/export_historical_baselines.py"),
+            "--help",
+        ],
+        cwd=tmp_path,
+        env={**os.environ, "PYTHONPATH": ""},
+        capture_output=True,
+        check=True,
+    )
+    assert b"--remote" in run.stdout
+
+
+def test_receive_writes_real_jsonl_and_sanitizes_protocol_errors(tmp_path, monkeypatch):
+    import base64
+    import hashlib
+    from io import BytesIO
+
+    from scripts import export_historical_baselines as transport
+    from scripts.run_historical_baselines import lines
+
+    class Remote:
+        def __init__(self, wire, status=0):
+            self.stdout = BytesIO(wire)
+            self.status = status
+
+        def wait(self, *, timeout):
+            return self.status
+
+    data = b"sqlite bytes"
+    records = [
+        {"stage": "registry"},
+        {"registry": {"token": "pin", "revision": 1, "sha256": hashlib.sha256(data).hexdigest()}},
+        {"registry_block": base64.b64encode(data).decode()},
+        {"stage": "postgres"},
+        {"postgres": {"as_of": "2026-11-28T00:00:00Z", "transaction": "snapshot"}},
+        {"metadata": [{"match_id": "one", "newlines": "one\ntwo"}]},
+        {"details": [{"result": "ok"}]},
+        {"done": True},
+    ]
+    wire = b"".join(json.dumps(row).encode() + b"\n" for row in records)
+    good = tmp_path / "good"
+    good.mkdir()
+    transport.receive(Remote(wire), good)
+    assert list(lines(good / "metadata.jsonl")) == records[5]["metadata"]
+    assert list(lines(good / "details.jsonl")) == records[6]["details"]
+    assert (good / "source.json").exists()
+
+    monkeypatch.setattr(transport, "MAX_FRAME", 128)
+    failures = [
+        (b'{"stage":"imports"}\n', "EOF at imports; exit=255"),
+        (b"x" * 129, "Oversized remote export frame at bootstrap"),
+        (b"secret value", "Truncated remote export frame at bootstrap; exit=255"),
+        (b"secret value\n", "Invalid remote export frame at bootstrap"),
+        (
+            b'{"stage":"registry"}\n{"error":"ClientError"}\n',
+            "failed at registry: ClientError; exit=255",
+        ),
+    ]
+    for i, (payload, expected) in enumerate(failures):
+        folder = tmp_path / str(i)
+        folder.mkdir()
+        with pytest.raises(ValueError, match=expected) as err:
+            transport.receive(Remote(payload, 255), folder)
+        assert "secret value" not in str(err.value)
+        assert not (folder / "source.json").exists()
