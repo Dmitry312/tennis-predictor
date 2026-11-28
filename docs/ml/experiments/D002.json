@@ -1,0 +1,10 @@
+{
+  "id": "D002",
+  "status": "planned",
+  "hypothesis": "Recency weighting improves recent-period generalization while preserving older examples.",
+  "recency_half_life_years": [null, 0.5, 1, 2, 3, 5],
+  "null_half_life": "uniform weighting",
+  "weight_formula": "2 ** (-example_age_years / half_life_years), age evaluated at the training cutoff",
+  "validation": "rolling origin, then untouched chronological holdout",
+  "decision_rationale": null
+}

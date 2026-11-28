@@ -1,0 +1,26 @@
+{
+  "id": "R002",
+  "name": "Fast Elo",
+  "status": "planned",
+  "hypothesis": "Faster updates improve adaptation to changing strength.",
+  "config": {
+    "k": [
+      48,
+      64,
+      96
+    ]
+  },
+  "versions": {
+    "code": null,
+    "data": null,
+    "registry": null
+  },
+  "chronological_splits": null,
+  "metrics": null,
+  "segment_counts": null,
+  "artifacts": [],
+  "limitations": [
+    "No controlled historical run"
+  ],
+  "decision_rationale": "Await validation and held-out evidence."
+}

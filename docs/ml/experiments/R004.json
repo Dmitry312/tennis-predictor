@@ -1,0 +1,27 @@
+{
+  "id": "R004",
+  "name": "Glicko",
+  "status": "planned",
+  "hypothesis": "Time-dependent uncertainty improves calibration after gaps.",
+  "config": {
+    "rd": [
+      200,
+      350
+    ],
+    "rd_cap": 350,
+    "diffusion_per_sqrt_day": 10
+  },
+  "versions": {
+    "code": null,
+    "data": null,
+    "registry": null
+  },
+  "chronological_splits": null,
+  "metrics": null,
+  "segment_counts": null,
+  "artifacts": [],
+  "limitations": [
+    "No controlled historical run"
+  ],
+  "decision_rationale": "Await validation and held-out evidence."
+}

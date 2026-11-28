@@ -1,0 +1,32 @@
+{
+  "id": "R005",
+  "name": "Glicko-2",
+  "status": "planned",
+  "hypothesis": "Volatility improves calibration after changing performance.",
+  "config": {
+    "rd": [
+      200,
+      350
+    ],
+    "rd_cap": 350,
+    "sigma": 0.06,
+    "tau": [
+      0.3,
+      0.5,
+      1
+    ]
+  },
+  "versions": {
+    "code": null,
+    "data": null,
+    "registry": null
+  },
+  "chronological_splits": null,
+  "metrics": null,
+  "segment_counts": null,
+  "artifacts": [],
+  "limitations": [
+    "No controlled historical run"
+  ],
+  "decision_rationale": "Await validation and held-out evidence."
+}

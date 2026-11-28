@@ -1,0 +1,25 @@
+# Rating experiments
+
+| ID | Candidate | Historical status |
+| --- | --- | --- |
+| [R001](R001.md) | Global Elo | planned |
+| [R002](R002.md) | Fast Elo | planned |
+| [R003](R003.md) | Surface Elo | planned |
+| [R004](R004.md) | Glicko | planned |
+| [R005](R005.md) | Glicko-2 | planned |
+
+Keep the stable ID and its JSON manifest when moving to `run`, `accepted` or
+`rejected`. Add actual code, data and registry versions, chronological split
+boundaries, metrics, segment counts, artifact pointers, limitations and a
+decision rationale. Preserve prior and negative outcomes. Keep large outputs
+and credentials outside Git. Future ML work maintains these records and the
+[decision log](../decisions/index.md).
+
+## Planned Dataset Builder experiments
+
+| ID | Candidate experiment | Status |
+| --- | --- | --- |
+| [D001](D001.json) | Compare training windows of all eligible history, 7, 5, 3, 2 or 1 year with fixed rating warmup. | planned |
+| [D002](D002.json) | Compare uniform weighting and recency half-lives of 0.5, 1, 2, 3 or 5 years. | planned |
+
+These plans have no measurements or accepted outcomes.
